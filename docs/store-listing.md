@@ -4,9 +4,11 @@
 AI Browser Guard
 
 ## Short Description (132 chars max)
-Detect, monitor, and control AI agents in your browser. Kill switch, delegation rules, boundary alerts. All local, zero tracking.
+[BETA] Detect and control AI agents in your browser. Kill switch, delegation rules, boundary alerts. Local-only, zero tracking.
 
 ## Detailed Description
+
+BETA — AI Browser Guard is in active development. We are building the security infrastructure that the AI agent ecosystem needs, and we want your feedback to get it right. Report issues or suggest features: https://github.com/opena2a-org/aibrowserguard/issues
 
 AI Browser Guard detects when AI automation frameworks take control of your browser and gives you tools to manage what they can do.
 
@@ -48,10 +50,19 @@ PERMISSIONS EXPLAINED
 
 This extension requires host access to all URLs because AI agents can operate on any website. Detection content scripts must run on every page to provide coverage. The extension makes no network requests and processes all data locally.
 
-OPEN SOURCE
+ABOUT OPENA2A
 
-AI Browser Guard is open source and part of the OpenA2A security platform.
+AI Browser Guard is built by OpenA2A, an open-source security platform focused on securing the AI agent ecosystem. As AI agents increasingly operate autonomously across the web — browsing, clicking, filling forms, making purchases — the gap between what agents can do and what users can control keeps growing. OpenA2A builds the tools to close that gap: agent identity management, runtime protection, security testing, and browser-level controls like this extension.
+
+We believe AI infrastructure security should be open, auditable, and accessible to everyone — not locked behind enterprise paywalls. Every tool we ship is open source, privacy-first, and designed to work without requiring agents to cooperate.
+
+Learn more: https://opena2a.org
 Source code: https://github.com/opena2a-org/aibrowserguard
+
+FEEDBACK
+
+This is a beta release. We are actively improving detection accuracy, adding new framework signatures, and expanding delegation controls. If you encounter issues, have feature requests, or want to contribute, open an issue on GitHub:
+https://github.com/opena2a-org/aibrowserguard/issues
 
 ---
 
