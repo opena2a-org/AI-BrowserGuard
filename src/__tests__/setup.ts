@@ -111,16 +111,8 @@ const chromeMock = {
 
 // Mock document and window for content-script code running in Node
 if (typeof document === 'undefined') {
-  (globalThis as Record<string, unknown>).document = {
-    getOwnPropertyNames: Object.getOwnPropertyNames,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    querySelectorAll: vi.fn(() => []),
-    createElement: vi.fn(() => ({})),
-  };
-  // Proxy so Object.getOwnPropertyNames(document) returns an empty-ish set
   const docProxy = new Proxy({} as Record<string, unknown>, {
-    getOwnPropertyNames() { return []; },
+    ownKeys() { return []; },
     get(_target, prop) {
       if (prop === 'addEventListener') return vi.fn();
       if (prop === 'removeEventListener') return vi.fn();
