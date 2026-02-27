@@ -1,0 +1,90 @@
+name: PR Review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Claude PR Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} || echo "Failed to get diff")
+          # Truncate at 120KB to fit API limits
+          DIFF="${DIFF:0:122880}"
+          # Write to file to avoid shell escaping issues
+          echo "$DIFF" > /tmp/pr-diff.txt
+
+      - name: Run Claude review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY not set, skipping review"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DIFF=$(cat /tmp/pr-diff.txt)
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n \
+              --arg diff "$DIFF" \
+              --arg title "${{ github.event.pull_request.title }}" \
+              '{
+                model: "claude-sonnet-4-5-20250929",
+                max_tokens: 4096,
+                system: "You are a senior code reviewer for AI Browser Guard, a Chrome extension (Manifest V3) that detects and controls AI agents in browser sessions. Tech stack: TypeScript strict mode, Vite, Vitest, Chrome Extension APIs. Review for: 1) Security (XSS, injection, unsafe eval, credential leaks) 2) Chrome extension best practices (MV3 compliance, content script isolation, message passing) 3) TypeScript correctness (strict mode, proper typing) 4) Test coverage for security-critical paths 5) Performance (content script overhead, memory leaks). End with VERDICT: APPROVE or REQUEST_CHANGES. List any CRITICAL or HIGH findings.",
+                messages: [{
+                  role: "user",
+                  content: ("PR: " + $title + "\n\nDiff:\n```\n" + $diff + "\n```\n\nReview this PR.")
+                }]
+              }'
+            )")
+
+          REVIEW=$(echo "$RESPONSE" | jq -r '.content[0].text // "Review failed"')
+          echo "$REVIEW" > /tmp/review.txt
+
+          if echo "$REVIEW" | grep -q "VERDICT: APPROVE"; then
+            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=REQUEST_CHANGES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post review
+        if: steps.review.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW=$(cat /tmp/review.txt)
+          VERDICT="${{ steps.review.outputs.verdict }}"
+
+          if [ "$VERDICT" = "APPROVE" ]; then
+            gh pr review ${{ github.event.pull_request.number }} --approve --body "$REVIEW" || \
+              gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW"
+          else
+            gh pr review ${{ github.event.pull_request.number }} --request-changes --body "$REVIEW" || \
+              gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW"
+          fi
