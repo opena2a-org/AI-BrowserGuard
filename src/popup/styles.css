@@ -1,8 +1,8 @@
 /*
  * AI Browser Guard - Popup Stylesheet
  *
- * Professional dark theme for the extension popup.
- * Enterprise-grade design with clean typography and clear visual hierarchy.
+ * Bright, professional theme aligned with the OpenA2A website design.
+ * Clean typography and clear visual hierarchy.
  * No decorative elements or emojis. Information density is prioritized.
  */
 
@@ -19,31 +19,41 @@
 }
 
 :root {
-  /* Color system - dark theme with teal accent for security context */
-  --bg-primary: #0f1419;
-  --bg-secondary: #1a2028;
-  --bg-tertiary: #242d38;
-  --bg-hover: #2a3442;
+  /* Color system - bright theme aligned with OpenA2A website */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-hover: #eff6ff;
 
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
 
-  --border-default: #30363d;
-  --border-muted: #21262d;
+  --border-default: #e5e7eb;
+  --border-muted: #f3f4f6;
+
+  /* Brand colors - OpenA2A blue-to-teal gradient */
+  --color-accent: #0ea5e9;
+  --color-accent-hover: #0284c7;
+  --color-accent-light: rgba(14, 165, 233, 0.08);
+  --color-gradient-from: #2563eb;
+  --color-gradient-to: #0d9488;
 
   /* Status colors */
-  --color-safe: #3fb950;
-  --color-warning: #d29922;
-  --color-danger: #f85149;
-  --color-info: #58a6ff;
-  --color-accent: #06b6d4;
+  --color-safe: #16a34a;
+  --color-safe-bg: rgba(22, 163, 74, 0.08);
+  --color-warning: #d97706;
+  --color-warning-bg: rgba(217, 119, 6, 0.08);
+  --color-danger: #dc2626;
+  --color-danger-bg: rgba(220, 38, 38, 0.08);
+  --color-info: #3b82f6;
+  --color-info-bg: rgba(59, 130, 246, 0.08);
 
   /* Severity colors */
-  --severity-critical: #f85149;
-  --severity-high: #db6d28;
-  --severity-medium: #d29922;
-  --severity-low: #8b949e;
+  --severity-critical: #dc2626;
+  --severity-high: #ea580c;
+  --severity-medium: #d97706;
+  --severity-low: #6b7280;
 
   /* Typography */
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
@@ -64,6 +74,8 @@
   /* Layout */
   --popup-width: 360px;
   --border-radius: 6px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 body {
@@ -156,7 +168,7 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .status-idle {
-  background-color: rgba(59, 185, 80, 0.12);
+  background-color: var(--color-safe-bg);
   color: var(--color-safe);
 }
 
@@ -165,7 +177,7 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .status-detected {
-  background-color: rgba(210, 153, 34, 0.12);
+  background-color: var(--color-warning-bg);
   color: var(--color-warning);
 }
 
@@ -175,7 +187,7 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .status-killed {
-  background-color: rgba(248, 81, 73, 0.12);
+  background-color: var(--color-danger-bg);
   color: var(--color-danger);
 }
 
@@ -184,7 +196,7 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .status-delegated {
-  background-color: rgba(6, 182, 212, 0.12);
+  background-color: var(--color-accent-light);
   color: var(--color-accent);
 }
 
@@ -206,10 +218,12 @@ body::-webkit-scrollbar-thumb:hover {
   border: 1px solid var(--border-default);
   border-radius: var(--border-radius);
   padding: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel-danger {
-  border-color: rgba(248, 81, 73, 0.3);
+  border-color: rgba(220, 38, 38, 0.25);
+  background-color: rgba(220, 38, 38, 0.03);
 }
 
 .panel-title {
@@ -248,7 +262,7 @@ body::-webkit-scrollbar-thumb:hover {
   font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.15s ease;
   white-space: nowrap;
 }
 
@@ -258,13 +272,15 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .btn-primary {
-  background-color: var(--color-accent);
-  color: #000;
-  border-color: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-gradient-from), var(--color-gradient-to));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #22d3ee;
+  box-shadow: 0 4px 8px rgba(14, 165, 233, 0.25);
+  filter: brightness(1.05);
 }
 
 .btn-danger {
@@ -275,21 +291,23 @@ body::-webkit-scrollbar-thumb:hover {
   padding: var(--spacing-sm) var(--spacing-lg);
   font-weight: 600;
   font-size: var(--font-size-base);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background-color: #da3633;
+  background-color: #b91c1c;
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
 }
 
 .btn-secondary {
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-primary);
   color: var(--text-primary);
   border-color: var(--border-default);
 }
 
 .btn-secondary:hover:not(:disabled) {
   background-color: var(--bg-hover);
-  border-color: var(--text-muted);
+  border-color: var(--color-accent);
 }
 
 /* ============================================================
@@ -366,6 +384,7 @@ body::-webkit-scrollbar-thumb:hover {
 
 .detection-card {
   background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: var(--border-radius);
   padding: var(--spacing-sm) var(--spacing-md);
 }
@@ -419,21 +438,24 @@ body::-webkit-scrollbar-thumb:hover {
   width: 100%;
   padding: var(--spacing-sm) var(--spacing-md);
   margin-bottom: var(--spacing-sm);
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-primary);
   border: 1px solid var(--border-default);
   border-radius: var(--border-radius);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .preset-card:hover {
   border-color: var(--color-accent);
+  background-color: var(--bg-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .preset-card.selected {
   border-color: var(--color-accent);
-  background-color: rgba(6, 182, 212, 0.08);
+  background-color: var(--color-accent-light);
 }
 
 .preset-name {
@@ -476,22 +498,22 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 .severity-badge-critical {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: rgba(220, 38, 38, 0.1);
   color: var(--severity-critical);
 }
 
 .severity-badge-high {
-  background-color: rgba(219, 109, 40, 0.15);
+  background-color: rgba(234, 88, 12, 0.1);
   color: var(--severity-high);
 }
 
 .severity-badge-medium {
-  background-color: rgba(210, 153, 34, 0.15);
+  background-color: rgba(217, 119, 6, 0.1);
   color: var(--severity-medium);
 }
 
 .severity-badge-low {
-  background-color: rgba(139, 148, 158, 0.15);
+  background-color: rgba(107, 114, 128, 0.1);
   color: var(--severity-low);
 }
 
@@ -508,7 +530,7 @@ kbd {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  box-shadow: 0 1px 0 var(--border-muted);
+  box-shadow: 0 1px 0 var(--border-default);
 }
 
 /* ============================================================
@@ -574,23 +596,27 @@ kbd {
    Form Elements
    ============================================================ */
 
-.input-field {
+.input-field,
+.form-input {
   width: 100%;
   padding: var(--spacing-sm);
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-primary);
   border: 1px solid var(--border-default);
   border-radius: var(--border-radius);
   color: var(--text-primary);
   font-family: var(--font-family);
   font-size: var(--font-size-sm);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.input-field:focus {
+.input-field:focus,
+.form-input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-light);
 }
 
-.input-field::placeholder {
+.input-field::placeholder,
+.form-input::placeholder {
   color: var(--text-muted);
 }
