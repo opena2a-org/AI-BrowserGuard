@@ -42,7 +42,7 @@ PRIVACY
 
 All processing happens locally on your device. Zero network requests. No analytics, no tracking, no data collection. Session logs and settings are stored in chrome.storage.local and deleted when you uninstall.
 
-See full privacy policy: https://opena2a-org.github.io/aibrowserguard/privacy-policy.html
+See full privacy policy: https://opena2a.org/aibrowserguard/privacy
 
 PERMISSIONS EXPLAINED
 
