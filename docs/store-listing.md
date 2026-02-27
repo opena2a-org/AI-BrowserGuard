@@ -52,9 +52,18 @@ This extension requires host access to all URLs because AI agents can operate on
 
 ABOUT OPENA2A
 
-AI Browser Guard is built by OpenA2A, an open-source security platform focused on securing the AI agent ecosystem. As AI agents increasingly operate autonomously across the web — browsing, clicking, filling forms, making purchases — the gap between what agents can do and what users can control keeps growing. OpenA2A builds the tools to close that gap: agent identity management, runtime protection, security testing, and browser-level controls like this extension.
+AI Browser Guard is built by OpenA2A, an open-source security platform building infrastructure for the AI agent ecosystem. AI agents are already making decisions, calling APIs, and accessing production data — without identity, visibility, or accountability. One compromised or misaligned agent can silently exfiltrate data, escalate privileges, or delete critical systems, and most organizations won't notice until damage is done.
 
-We believe AI infrastructure security should be open, auditable, and accessible to everyone — not locked behind enterprise paywalls. Every tool we ship is open source, privacy-first, and designed to work without requiring agents to cooperate.
+OpenA2A builds the tools to close that gap. 11 npm packages published, 8,300+ monthly downloads, 6 security PRs accepted into OpenClaw (205K+ stars), and 2,500+ lines of security code merged into projects used by millions. Our ecosystem includes:
+
+- AIM (Agent Identity Management) — Cryptographic identity, trust scoring, capability-based access control
+- HackMyAgent — 147+ security checks, 75 adversarial attack payloads, OASB compliance scoring
+- Secretless AI — Keeps secrets out of AI context windows across Claude Code, Cursor, Copilot, Windsurf
+- ARP (Agent Runtime Protection) — Multi-layer runtime security monitoring and enforcement
+- OASB (Open Agent Security Benchmark) — 222 attack scenarios across 10 MITRE ATLAS techniques
+- DVAA (Damn Vulnerable AI Agent) — Intentionally vulnerable agents for learning and red-teaming
+
+AI agents should be powerful — but never unaccountable.
 
 Learn more: https://opena2a.org
 Source code: https://github.com/opena2a-org/aibrowserguard
