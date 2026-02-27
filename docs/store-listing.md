@@ -8,7 +8,7 @@ AI Browser Guard
 
 ## Detailed Description
 
-BETA — AI Browser Guard is in active development. We are building the security infrastructure that the AI agent ecosystem needs, and we want your feedback to get it right. Report issues or suggest features: https://github.com/opena2a-org/aibrowserguard/issues
+BETA — AI Browser Guard is in active development. We are building the security infrastructure that the AI agent ecosystem needs, and we want your feedback to get it right. Report issues or suggest features: https://github.com/opena2a-org/AI-BrowserGuard/issues
 
 AI Browser Guard detects when AI automation frameworks take control of your browser and gives you tools to manage what they can do.
 
@@ -66,12 +66,12 @@ OpenA2A builds the tools to close that gap. 11 npm packages published, 8,300+ mo
 AI agents should be powerful — but never unaccountable.
 
 Learn more: https://opena2a.org
-Source code: https://github.com/opena2a-org/aibrowserguard
+Source code: https://github.com/opena2a-org/AI-BrowserGuard
 
 FEEDBACK
 
 This is a beta release. We are actively improving detection accuracy, adding new framework signatures, and expanding delegation controls. If you encounter issues, have feature requests, or want to contribute, open an issue on GitHub:
-https://github.com/opena2a-org/aibrowserguard/issues
+https://github.com/opena2a-org/AI-BrowserGuard/issues
 
 ---
 
