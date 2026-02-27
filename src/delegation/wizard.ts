@@ -2,55 +2,28 @@
  * Delegation wizard UI logic.
  *
  * Manages the 3-preset delegation wizard that appears in the popup.
- * Users select a preset, optionally configure site patterns and time
- * bounds, then activate the delegation.
  */
 
-import type { DelegationPreset, DelegationRule, SitePattern, TimeBound } from '../types/delegation';
+import type { DelegationPreset, DelegationRule, SitePattern } from '../types/delegation';
+import { createRuleFromPreset } from './rules';
 
-/**
- * Wizard step in the delegation flow.
- * The wizard progresses linearly: preset -> sites -> time -> confirm.
- */
 export type WizardStep = 'preset' | 'sites' | 'time' | 'confirm';
 
-/**
- * State of the delegation wizard.
- */
 export interface WizardState {
-  /** Current step in the wizard. */
   currentStep: WizardStep;
-
-  /** Selected preset (set in step 1). */
   selectedPreset: DelegationPreset | null;
-
-  /** Site patterns configured by the user (step 2, limited preset only). */
   sitePatterns: SitePattern[];
-
-  /** Selected time duration in minutes (step 3, limited preset only). */
   durationMinutes: number | null;
-
-  /** Optional label for the delegation rule. */
   label: string;
-
-  /** Validation errors for the current step. */
   errors: string[];
 }
 
-/**
- * Available time duration options for the limited preset.
- */
 export const TIME_DURATION_OPTIONS = [
   { label: '15 minutes', minutes: 15 },
   { label: '1 hour', minutes: 60 },
   { label: '4 hours', minutes: 240 },
 ] as const;
 
-/**
- * Create the initial wizard state.
- *
- * @returns A fresh wizard state at the preset selection step.
- */
 export function createInitialWizardState(): WizardState {
   return {
     currentStep: 'preset',
@@ -64,129 +37,359 @@ export function createInitialWizardState(): WizardState {
 
 /**
  * Select a delegation preset and determine the next step.
- *
- * - readOnly: Skip to confirm (no additional configuration needed).
- * - limited: Go to sites step.
- * - fullAccess: Skip to confirm.
- *
- * @param state - Current wizard state.
- * @param preset - The selected preset.
- * @returns Updated wizard state with the next step.
- *
- * TODO: Set selectedPreset.
- * Determine next step based on preset.
- * Clear any previous errors.
  */
 export function selectPreset(state: WizardState, preset: DelegationPreset): WizardState {
-  // TODO: Update state with selected preset and determine next step.
-  throw new Error('Not implemented');
+  const nextStep: WizardStep = preset === 'limited' ? 'sites' : 'confirm';
+  return {
+    ...state,
+    selectedPreset: preset,
+    currentStep: nextStep,
+    errors: [],
+  };
 }
 
 /**
  * Add a site pattern to the wizard configuration.
- *
- * @param state - Current wizard state.
- * @param pattern - The site pattern to add.
- * @returns Updated wizard state with the new pattern.
- *
- * TODO: Validate the pattern is a valid glob.
- * Check for duplicate patterns.
- * Add to sitePatterns array.
  */
 export function addSitePattern(state: WizardState, pattern: SitePattern): WizardState {
-  // TODO: Validate and add site pattern.
-  throw new Error('Not implemented');
+  if (!pattern.pattern.trim()) {
+    return { ...state, errors: ['Pattern cannot be empty.'] };
+  }
+
+  // Check for duplicates
+  const exists = state.sitePatterns.some((p) => p.pattern === pattern.pattern);
+  if (exists) {
+    return { ...state, errors: ['This pattern already exists.'] };
+  }
+
+  return {
+    ...state,
+    sitePatterns: [...state.sitePatterns, pattern],
+    errors: [],
+  };
 }
 
 /**
- * Remove a site pattern from the wizard configuration.
- *
- * @param state - Current wizard state.
- * @param index - Index of the pattern to remove.
- * @returns Updated wizard state without the removed pattern.
+ * Remove a site pattern by index.
  */
 export function removeSitePattern(state: WizardState, index: number): WizardState {
-  // TODO: Remove pattern at index and return updated state.
-  throw new Error('Not implemented');
+  const sitePatterns = state.sitePatterns.filter((_, i) => i !== index);
+  return { ...state, sitePatterns, errors: [] };
 }
 
 /**
  * Set the time duration for the limited preset.
- *
- * @param state - Current wizard state.
- * @param minutes - Duration in minutes (15, 60, or 240).
- * @returns Updated wizard state.
  */
 export function setDuration(state: WizardState, minutes: number): WizardState {
-  // TODO: Validate minutes is one of the allowed options, set durationMinutes.
-  throw new Error('Not implemented');
+  const valid = TIME_DURATION_OPTIONS.some((opt) => opt.minutes === minutes);
+  if (!valid) {
+    return { ...state, errors: ['Invalid duration. Choose 15 minutes, 1 hour, or 4 hours.'] };
+  }
+  return { ...state, durationMinutes: minutes, errors: [] };
 }
 
 /**
  * Advance to the next wizard step.
- *
- * @param state - Current wizard state.
- * @returns Updated wizard state at the next step.
- *
- * TODO: Validate current step inputs before advancing.
- * For sites step: require at least one pattern for limited preset.
- * For time step: require a duration selection for limited preset.
- * Set errors if validation fails.
  */
 export function nextStep(state: WizardState): WizardState {
-  // TODO: Validate current step and advance if valid.
-  throw new Error('Not implemented');
+  switch (state.currentStep) {
+    case 'preset':
+      if (!state.selectedPreset) {
+        return { ...state, errors: ['Select a delegation preset.'] };
+      }
+      if (state.selectedPreset === 'limited') {
+        return { ...state, currentStep: 'sites', errors: [] };
+      }
+      return { ...state, currentStep: 'confirm', errors: [] };
+
+    case 'sites':
+      if (state.sitePatterns.length === 0) {
+        return { ...state, errors: ['Add at least one site pattern.'] };
+      }
+      return { ...state, currentStep: 'time', errors: [] };
+
+    case 'time':
+      if (state.durationMinutes === null) {
+        return { ...state, errors: ['Select a time duration.'] };
+      }
+      return { ...state, currentStep: 'confirm', errors: [] };
+
+    case 'confirm':
+      return state;
+
+    default:
+      return state;
+  }
 }
 
 /**
  * Go back to the previous wizard step.
- *
- * @param state - Current wizard state.
- * @returns Updated wizard state at the previous step.
  */
 export function previousStep(state: WizardState): WizardState {
-  // TODO: Navigate back to the previous step, preserving entered data.
-  throw new Error('Not implemented');
+  const stepOrder: WizardStep[] = ['preset', 'sites', 'time', 'confirm'];
+  const currentIndex = stepOrder.indexOf(state.currentStep);
+
+  if (currentIndex <= 0) return state;
+
+  // For readOnly/fullAccess, go back from confirm to preset
+  if (state.currentStep === 'confirm' && state.selectedPreset !== 'limited') {
+    return { ...state, currentStep: 'preset', errors: [] };
+  }
+
+  return { ...state, currentStep: stepOrder[currentIndex - 1], errors: [] };
 }
 
 /**
  * Finalize the wizard and create a delegation rule.
- *
- * @param state - The completed wizard state.
- * @returns The delegation rule created from the wizard inputs, or null if invalid.
- *
- * TODO: Validate all wizard state is complete.
- * Call createRuleFromPreset from rules.ts with the wizard configuration.
- * Return the created rule.
  */
 export function finalizeWizard(state: WizardState): DelegationRule | null {
-  // TODO: Validate state and create delegation rule.
-  throw new Error('Not implemented');
+  if (!state.selectedPreset) return null;
+
+  if (state.selectedPreset === 'limited') {
+    if (state.sitePatterns.length === 0) return null;
+    if (state.durationMinutes === null) return null;
+  }
+
+  return createRuleFromPreset(state.selectedPreset, {
+    sitePatterns: state.sitePatterns,
+    durationMinutes: state.durationMinutes ?? undefined,
+    label: state.label || undefined,
+  });
 }
+
+const PRESET_DESCRIPTIONS: Record<DelegationPreset, { title: string; description: string }> = {
+  readOnly: {
+    title: 'Read-Only',
+    description: 'Agent can navigate and read page content. Cannot click, type, or submit forms.',
+  },
+  limited: {
+    title: 'Limited Access',
+    description: 'Agent can interact with specific sites you choose, with a time limit.',
+  },
+  fullAccess: {
+    title: 'Full Access',
+    description: 'Agent can perform any action. All activity is logged with boundary alerts.',
+  },
+};
 
 /**
  * Render the wizard UI into a container element.
- *
- * This is a vanilla DOM rendering function (no framework).
- * It creates the appropriate form elements for the current step.
- *
- * @param container - The DOM element to render into.
- * @param state - The current wizard state.
- * @param onStateChange - Callback when the state changes.
- *
- * TODO: Clear container.
- * Based on state.currentStep, render the appropriate UI:
- * - preset: 3 cards for readOnly/limited/fullAccess with descriptions.
- * - sites: Input field + pattern list + add/remove buttons.
- * - time: 3 duration option buttons.
- * - confirm: Summary of selected configuration + activate button.
- * Wire up event listeners to call state mutation functions.
- * Call onStateChange with updated state after each user action.
  */
 export function renderWizard(
   container: HTMLElement,
   state: WizardState,
   onStateChange: (newState: WizardState) => void
 ): void {
-  // TODO: Render wizard UI based on current step.
+  container.innerHTML = '';
+
+  // Error display
+  if (state.errors.length > 0) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'wizard-errors';
+    errorDiv.style.cssText = 'color: var(--danger); font-size: 12px; margin-bottom: 8px;';
+    errorDiv.textContent = state.errors.join(' ');
+    container.appendChild(errorDiv);
+  }
+
+  switch (state.currentStep) {
+    case 'preset':
+      renderPresetStep(container, state, onStateChange);
+      break;
+    case 'sites':
+      renderSitesStep(container, state, onStateChange);
+      break;
+    case 'time':
+      renderTimeStep(container, state, onStateChange);
+      break;
+    case 'confirm':
+      renderConfirmStep(container, state, onStateChange);
+      break;
+  }
+}
+
+function renderPresetStep(
+  container: HTMLElement,
+  state: WizardState,
+  onStateChange: (newState: WizardState) => void
+): void {
+  const presets: DelegationPreset[] = ['readOnly', 'limited', 'fullAccess'];
+  for (const preset of presets) {
+    const info = PRESET_DESCRIPTIONS[preset];
+    const card = document.createElement('div');
+    card.className = `preset-card${state.selectedPreset === preset ? ' selected' : ''}`;
+    card.innerHTML = `
+      <strong>${info.title}</strong>
+      <p style="margin: 4px 0 0; font-size: 11px; color: var(--text-secondary);">${info.description}</p>
+    `;
+    card.addEventListener('click', () => {
+      onStateChange(selectPreset(state, preset));
+    });
+    container.appendChild(card);
+  }
+}
+
+function renderSitesStep(
+  container: HTMLElement,
+  state: WizardState,
+  onStateChange: (newState: WizardState) => void
+): void {
+  const heading = document.createElement('p');
+  heading.style.cssText = 'font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;';
+  heading.textContent = 'Add sites the agent can access (glob patterns):';
+  container.appendChild(heading);
+
+  // Input row
+  const inputRow = document.createElement('div');
+  inputRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 8px;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'e.g., *.example.com';
+  input.className = 'form-input';
+  input.style.cssText = 'flex: 1;';
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-primary';
+  addBtn.textContent = 'Add';
+  addBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
+  addBtn.addEventListener('click', () => {
+    const value = input.value.trim();
+    if (value) {
+      onStateChange(addSitePattern(state, { pattern: value, action: 'allow' }));
+      input.value = '';
+    }
+  });
+
+  inputRow.appendChild(input);
+  inputRow.appendChild(addBtn);
+  container.appendChild(inputRow);
+
+  // Pattern list
+  for (let i = 0; i < state.sitePatterns.length; i++) {
+    const p = state.sitePatterns[i];
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;';
+    row.innerHTML = `<span style="color: var(--text-primary);">${p.pattern} (${p.action})</span>`;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-secondary';
+    removeBtn.textContent = 'Remove';
+    removeBtn.style.cssText = 'padding: 2px 8px; font-size: 11px;';
+    removeBtn.addEventListener('click', () => onStateChange(removeSitePattern(state, i)));
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+  }
+
+  // Nav buttons
+  renderNavButtons(container, state, onStateChange);
+}
+
+function renderTimeStep(
+  container: HTMLElement,
+  state: WizardState,
+  onStateChange: (newState: WizardState) => void
+): void {
+  const heading = document.createElement('p');
+  heading.style.cssText = 'font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;';
+  heading.textContent = 'How long should the delegation last?';
+  container.appendChild(heading);
+
+  for (const option of TIME_DURATION_OPTIONS) {
+    const btn = document.createElement('button');
+    btn.className = `btn ${state.durationMinutes === option.minutes ? 'btn-primary' : 'btn-secondary'}`;
+    btn.textContent = option.label;
+    btn.style.cssText = 'display: block; width: 100%; margin-bottom: 6px;';
+    btn.addEventListener('click', () => {
+      const updated = setDuration(state, option.minutes);
+      onStateChange(nextStep(updated));
+    });
+    container.appendChild(btn);
+  }
+
+  renderNavButtons(container, state, onStateChange, true);
+}
+
+function renderConfirmStep(
+  container: HTMLElement,
+  state: WizardState,
+  onStateChange: (newState: WizardState) => void
+): void {
+  const preset = state.selectedPreset;
+  if (!preset) return;
+
+  const info = PRESET_DESCRIPTIONS[preset];
+  const summary = document.createElement('div');
+  summary.style.cssText = 'font-size: 12px; color: var(--text-secondary);';
+
+  let html = `<p><strong>Preset:</strong> ${info.title}</p>`;
+  if (state.sitePatterns.length > 0) {
+    html += `<p><strong>Sites:</strong> ${state.sitePatterns.map((p) => p.pattern).join(', ')}</p>`;
+  }
+  if (state.durationMinutes) {
+    const opt = TIME_DURATION_OPTIONS.find((o) => o.minutes === state.durationMinutes);
+    html += `<p><strong>Duration:</strong> ${opt?.label ?? state.durationMinutes + ' minutes'}</p>`;
+  }
+  summary.innerHTML = html;
+  container.appendChild(summary);
+
+  // Label input
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.placeholder = 'Label (optional)';
+  labelInput.className = 'form-input';
+  labelInput.value = state.label;
+  labelInput.style.cssText = 'width: 100%; margin: 8px 0;';
+  labelInput.addEventListener('input', () => {
+    state.label = labelInput.value;
+  });
+  container.appendChild(labelInput);
+
+  // Activate button
+  const activateBtn = document.createElement('button');
+  activateBtn.className = 'btn btn-primary';
+  activateBtn.textContent = 'Activate Delegation';
+  activateBtn.style.cssText = 'width: 100%; margin-top: 8px;';
+  activateBtn.addEventListener('click', () => {
+    const rule = finalizeWizard(state);
+    if (rule) {
+      // Dispatch custom event for popup to pick up
+      container.dispatchEvent(
+        new CustomEvent('delegation-activated', { detail: rule, bubbles: true })
+      );
+    }
+  });
+  container.appendChild(activateBtn);
+
+  renderNavButtons(container, state, onStateChange, true);
+}
+
+function renderNavButtons(
+  container: HTMLElement,
+  state: WizardState,
+  onStateChange: (newState: WizardState) => void,
+  showBack = false
+): void {
+  const nav = document.createElement('div');
+  nav.style.cssText = 'display: flex; justify-content: space-between; margin-top: 8px;';
+
+  if (showBack) {
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn btn-secondary';
+    backBtn.textContent = 'Back';
+    backBtn.style.cssText = 'font-size: 11px;';
+    backBtn.addEventListener('click', () => onStateChange(previousStep(state)));
+    nav.appendChild(backBtn);
+  }
+
+  if (state.currentStep === 'sites') {
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn btn-primary';
+    nextBtn.textContent = 'Next';
+    nextBtn.style.cssText = 'font-size: 11px; margin-left: auto;';
+    nextBtn.addEventListener('click', () => onStateChange(nextStep(state)));
+    nav.appendChild(nextBtn);
+  }
+
+  if (nav.children.length > 0) {
+    container.appendChild(nav);
+  }
 }

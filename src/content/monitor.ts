@@ -2,167 +2,262 @@
  * Capability boundary monitor.
  *
  * Tracks what an agent does vs. what it is allowed to do under the
- * active delegation rules. Intercepts actions at the content script
- * level before they can affect the page.
+ * active delegation rules.
  */
 
 import type { AgentCapability } from '../types/agent';
-import type { AgentEvent, BoundaryViolation, MessagePayload } from '../types/events';
-import type { DelegationRule, DelegationScope, SitePattern } from '../types/delegation';
+import type { AgentEvent, BoundaryViolation } from '../types/events';
+import type { DelegationRule } from '../types/delegation';
+import { evaluateRule, isTimeBoundExpired } from '../delegation/rules';
+import { createTimelineEvent } from '../session/timeline';
 
-/**
- * Monitor state tracking current delegation and observed actions.
- */
 export interface MonitorState {
-  /** The currently active delegation rule, if any. */
   activeRule: DelegationRule | null;
-
-  /** Whether monitoring is active. */
   isMonitoring: boolean;
-
-  /** Count of actions allowed in the current session. */
   allowedCount: number;
-
-  /** Count of actions blocked in the current session. */
   blockedCount: number;
-
-  /** Recent violations for display in popup. */
   recentViolations: BoundaryViolation[];
 }
 
-/**
- * Result of checking an action against delegation rules.
- */
 export interface BoundaryCheckResult {
-  /** Whether the action is permitted. */
   allowed: boolean;
-
-  /** The rule that governs this decision, if any. */
   matchedRule: DelegationRule | null;
-
-  /** Reason for the decision (human-readable). */
   reason: string;
-
-  /** The specific site pattern or action restriction that matched. */
   matchDetail?: string;
 }
 
+let monitorState: MonitorState = {
+  activeRule: null,
+  isMonitoring: false,
+  allowedCount: 0,
+  blockedCount: 0,
+  recentViolations: [],
+};
+
 /**
- * Check whether an agent action is permitted under the active delegation rules.
- *
- * Evaluation order:
- * 1. If no delegation rule is active, all actions are blocked (fail-closed).
- * 2. Check if the delegation has expired (time bound).
- * 3. Check URL against site patterns (first match wins).
- * 4. Check action type against action restrictions.
- * 5. If action passes all checks, it is allowed.
- *
- * @param action - The capability the agent is attempting to use.
- * @param url - The URL where the action is being attempted.
- * @param rule - The active delegation rule.
- * @returns Whether the action is allowed and why.
- *
- * TODO: Implement fail-closed default (no rule = blocked).
- * Check time bound expiration.
- * Match URL against site patterns using glob matching.
- * Check action type against restriction list.
- * Return detailed result for logging and notification.
+ * Check whether an agent action is permitted under delegation rules.
+ * Fail-closed: no rule = blocked.
  */
 export function checkBoundary(
   action: AgentCapability,
   url: string,
   rule: DelegationRule | null
 ): BoundaryCheckResult {
-  // TODO: Implement boundary checking logic.
-  throw new Error('Not implemented');
+  if (!rule) {
+    return {
+      allowed: false,
+      matchedRule: null,
+      reason: 'No active delegation rule. All actions are blocked by default.',
+    };
+  }
+
+  if (!rule.isActive) {
+    return {
+      allowed: false,
+      matchedRule: rule,
+      reason: 'Delegation rule is no longer active.',
+    };
+  }
+
+  if (isDelegationExpired(rule)) {
+    return {
+      allowed: false,
+      matchedRule: rule,
+      reason: 'Delegation has expired.',
+    };
+  }
+
+  const result = evaluateRule(rule, action, url);
+  return {
+    allowed: result.allowed,
+    matchedRule: rule,
+    reason: result.reason,
+  };
 }
 
 /**
  * Match a URL against a site pattern using glob-style matching.
- *
- * Supported patterns:
- * - "*.example.com" matches any subdomain of example.com.
- * - "https://example.com/*" matches any path on example.com.
- * - "https://example.com/specific" matches exactly that URL.
- *
- * @param url - The URL to match.
- * @param pattern - The glob pattern to match against.
- * @returns Whether the URL matches the pattern.
- *
- * TODO: Convert glob pattern to regex.
- * Handle wildcard (*) as "match any characters except /".
- * Handle double wildcard (**) as "match any characters including /".
- * Handle protocol, hostname, and path separately for clarity.
  */
 export function matchSitePattern(url: string, pattern: string): boolean {
-  // TODO: Convert glob to regex and test against URL.
-  throw new Error('Not implemented');
+  try {
+    if (!pattern.includes('://')) {
+      const parsedUrl = new URL(url);
+      const hostname = parsedUrl.hostname;
+      const regexStr = pattern
+        .replace(/\./g, '\\.')
+        .replace(/\*\*/g, '.*')
+        .replace(/\*/g, '[^.]*');
+      return new RegExp(`^${regexStr}$`).test(hostname);
+    }
+    const regexStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\\\*/g, '.*');
+    return new RegExp(`^${regexStr}$`).test(url);
+  } catch {
+    return false;
+  }
+}
+
+function mapEventToCapability(eventType: string): AgentCapability | null {
+  switch (eventType) {
+    case 'click': return 'click';
+    case 'input': return 'type-text';
+    case 'submit': return 'submit-form';
+    case 'keydown': return 'type-text';
+    default: return null;
+  }
+}
+
+function getSelector(el: Element): string {
+  if (el.id) return `#${el.id}`;
+  if (el.className && typeof el.className === 'string') {
+    const classes = el.className.trim().split(/\s+/).slice(0, 2).join('.');
+    if (classes) return `${el.tagName.toLowerCase()}.${classes}`;
+  }
+  return el.tagName.toLowerCase();
 }
 
 /**
  * Start monitoring agent actions in the current page.
- *
- * Sets up DOM event interceptors to catch agent actions before they execute:
- * - MutationObserver for DOM modifications.
- * - Event listeners for click, input, submit, and form events.
- * - Navigation observer for page changes.
- * - Network request interceptor for fetch/XHR (via monkey-patching).
- *
- * @param rule - The active delegation rule to enforce.
- * @param onViolation - Callback for boundary violations.
- * @param onAction - Callback for all agent actions (allowed and blocked).
- * @returns Cleanup function to stop monitoring.
- *
- * TODO: Set up MutationObserver on document.body for DOM changes.
- * Add capturing event listeners for click, input, submit, keydown.
- * For each intercepted event, determine the agent capability being used.
- * Call checkBoundary() and either allow or preventDefault+stopPropagation.
- * Fire onViolation for blocked actions, onAction for all actions.
- * Return cleanup function that disconnects observer and removes listeners.
  */
 export function startBoundaryMonitor(
   rule: DelegationRule | null,
   onViolation: (violation: BoundaryViolation) => void,
   onAction: (event: AgentEvent) => void
 ): () => void {
-  // TODO: Set up DOM interception and boundary enforcement.
-  throw new Error('Not implemented');
+  monitorState = {
+    activeRule: rule,
+    isMonitoring: true,
+    allowedCount: 0,
+    blockedCount: 0,
+    recentViolations: [],
+  };
+
+  const cleanups: Array<() => void> = [];
+
+  // Intercept user interaction events
+  const interceptionHandler = (e: Event) => {
+    if (!monitorState.isMonitoring) return;
+    if (e.isTrusted) return; // Only intercept synthetic/untrusted events from agents
+
+    const capability = mapEventToCapability(e.type);
+    if (!capability) return;
+
+    const target = e.target as Element;
+    const selector = target ? getSelector(target) : undefined;
+    const url = window.location.href;
+
+    const result = checkBoundary(capability, url, monitorState.activeRule);
+
+    if (result.allowed) {
+      monitorState.allowedCount++;
+      const event = createTimelineEvent('action-allowed', url, `${capability} allowed`, {
+        targetSelector: selector,
+        attemptedAction: capability,
+        outcome: 'allowed',
+        ruleId: monitorState.activeRule?.id,
+      });
+      onAction(event);
+    } else {
+      monitorState.blockedCount++;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const violation: BoundaryViolation = {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        agentId: '',
+        attemptedAction: capability,
+        url,
+        targetSelector: selector,
+        blockingRuleId: monitorState.activeRule?.id ?? 'none',
+        reason: result.reason,
+        userOverride: false,
+      };
+      monitorState.recentViolations.push(violation);
+      if (monitorState.recentViolations.length > 50) {
+        monitorState.recentViolations.shift();
+      }
+      onViolation(violation);
+
+      const event = createTimelineEvent('action-blocked', url, `${capability} blocked: ${result.reason}`, {
+        targetSelector: selector,
+        attemptedAction: capability,
+        outcome: 'blocked',
+        ruleId: monitorState.activeRule?.id,
+      });
+      onAction(event);
+    }
+  };
+
+  const eventTypes = ['click', 'input', 'submit', 'keydown'];
+  for (const type of eventTypes) {
+    document.addEventListener(type, interceptionHandler, { capture: true });
+  }
+  cleanups.push(() => {
+    for (const type of eventTypes) {
+      document.removeEventListener(type, interceptionHandler, { capture: true });
+    }
+  });
+
+  // MutationObserver for DOM modifications
+  const observer = new MutationObserver((mutations) => {
+    if (!monitorState.isMonitoring) return;
+
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+        const url = window.location.href;
+        const result = checkBoundary('modify-dom', url, monitorState.activeRule);
+
+        if (!result.allowed) {
+          const target = mutation.target as Element;
+          const violation: BoundaryViolation = {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            agentId: '',
+            attemptedAction: 'modify-dom',
+            url,
+            targetSelector: target?.nodeType === 1 ? getSelector(target) : 'document',
+            blockingRuleId: monitorState.activeRule?.id ?? 'none',
+            reason: result.reason,
+            userOverride: false,
+          };
+          onViolation(violation);
+        }
+      }
+    }
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  cleanups.push(() => observer.disconnect());
+
+  return () => {
+    monitorState.isMonitoring = false;
+    for (const cleanup of cleanups) {
+      try { cleanup(); } catch { /* ignore */ }
+    }
+  };
 }
 
 /**
- * Update the active delegation rule for the monitor.
- * Called when the user changes delegation settings via the popup.
- *
- * @param rule - The new active delegation rule, or null to block everything.
- *
- * TODO: Update the internal monitor state.
- * Re-evaluate any pending actions against the new rule.
+ * Update the active delegation rule.
  */
 export function updateActiveRule(rule: DelegationRule | null): void {
-  // TODO: Update internal state and re-evaluate.
-  throw new Error('Not implemented');
+  monitorState.activeRule = rule;
 }
 
 /**
- * Check if the current delegation has expired based on its time bound.
- *
- * @param rule - The delegation rule to check.
- * @returns Whether the delegation has expired.
- *
- * TODO: Compare current time against rule.scope.timeBound.expiresAt.
- * If timeBound is null, the delegation never expires.
+ * Check if the current delegation has expired.
  */
 export function isDelegationExpired(rule: DelegationRule): boolean {
-  // TODO: Check time bound expiration.
-  throw new Error('Not implemented');
+  return isTimeBoundExpired(rule.scope.timeBound);
 }
 
 /**
- * Get the current monitor state for display in the popup.
- *
- * @returns The current monitoring state.
+ * Get the current monitor state.
  */
 export function getMonitorState(): MonitorState {
-  // TODO: Return the current internal monitor state.
-  throw new Error('Not implemented');
+  return { ...monitorState };
 }

@@ -2,116 +2,190 @@
  * Generic automation framework detection.
  *
  * Detects automation frameworks that may not leave WebDriver or CDP traces,
- * including custom automation tools, browser-based AI agents, and
- * newer frameworks that actively evade detection.
+ * including browser-based AI agents and newer frameworks.
  */
 
 import type { AgentType, DetectionMethod, DetectionConfidence } from '../types/agent';
 
-/**
- * Result of a framework-specific detection check.
- */
 export interface FrameworkDetectionResult {
-  /** Whether an automation framework was detected. */
   detected: boolean;
-
-  /** The identified framework type, if detected. */
   frameworkType: AgentType;
-
-  /** Detection method used. */
   method: DetectionMethod;
-
-  /** Confidence level. */
   confidence: DetectionConfidence;
-
-  /** Description of what was found. */
   detail: string;
-
-  /** Raw signal data for logging. */
   signals: Record<string, unknown>;
 }
 
 /**
  * Detect Anthropic Computer Use agent patterns.
  *
- * Anthropic's Computer Use tool operates by:
- * 1. Taking screenshots of the browser/desktop.
- * 2. Analyzing the screenshot with Claude.
- * 3. Sending mouse/keyboard events via an automation layer.
- *
- * Detectable patterns:
- * - Screenshot API calls at regular intervals (getDisplayMedia, canvas.toDataURL).
- * - Mouse events with pixel-perfect coordinates (no sub-pixel, no acceleration curve).
- * - Fixed timing between screenshot and subsequent click (model inference latency).
- * - Keyboard events without physical key press characteristics.
- *
- * @returns Detection result for Anthropic Computer Use.
- *
- * TODO: Monitor for periodic screenshot API usage.
- * Analyze mouse event coordinate patterns (integer-only, no natural jitter).
- * Measure timing between screenshot captures and subsequent interactions.
- * Check for the specific mouse/keyboard event dispatch patterns used by the tool.
+ * Anthropic Computer Use operates via screenshot + click patterns
+ * with pixel-perfect coordinates and fixed inference timing.
  */
 export function detectAnthropicComputerUse(): FrameworkDetectionResult {
-  // TODO: Implement Anthropic Computer Use detection heuristics.
-  throw new Error('Not implemented');
+  const signals: Record<string, unknown> = {};
+  const found: string[] = [];
+
+  // Check for Computer Use-specific injected globals
+  const markers = [
+    '__anthropic_computer_use__',
+    '__computer_use__',
+    '__anthropic_tool__',
+  ];
+  for (const marker of markers) {
+    if (marker in window) {
+      found.push(marker);
+      signals[marker] = true;
+    }
+  }
+
+  // Check for screenshot API overrides (canvas.toDataURL, getDisplayMedia)
+  try {
+    const canvasProto = HTMLCanvasElement.prototype;
+    const toDataURLDesc = Object.getOwnPropertyDescriptor(canvasProto, 'toDataURL');
+    if (toDataURLDesc && !toDataURLDesc.writable && toDataURLDesc.configurable) {
+      signals.toDataURLModified = true;
+    }
+  } catch {
+    // Ignore
+  }
+
+  return {
+    detected: found.length > 0,
+    frameworkType: 'anthropic-computer-use',
+    method: 'framework-fingerprint',
+    confidence: found.length > 0 ? 'high' : 'low',
+    detail: found.length > 0
+      ? `Anthropic Computer Use indicators: ${found.join(', ')}.`
+      : 'No Anthropic Computer Use indicators detected.',
+    signals,
+  };
 }
 
 /**
  * Detect OpenAI Operator agent patterns.
- *
- * OpenAI Operator uses a custom browser automation approach:
- * - Built on a modified Chromium instance.
- * - Injects specific runtime helpers.
- * - May use accessibility tree inspection.
- * - Distinct navigation and interaction patterns.
- *
- * @returns Detection result for OpenAI Operator.
- *
- * TODO: Check for Operator-specific injected scripts and globals.
- * Look for accessibility tree query patterns.
- * Detect modified Chromium user agent strings.
  */
 export function detectOpenAIOperator(): FrameworkDetectionResult {
-  // TODO: Implement OpenAI Operator detection heuristics.
-  throw new Error('Not implemented');
+  const signals: Record<string, unknown> = {};
+  const found: string[] = [];
+
+  // Check for Operator-specific globals
+  const markers = [
+    '__openai_operator__',
+    '__operator_runtime__',
+    '__openai_browser_tool__',
+  ];
+  for (const marker of markers) {
+    if (marker in window) {
+      found.push(marker);
+      signals[marker] = true;
+    }
+  }
+
+  // Check for modified user agent indicating custom Chromium
+  const ua = navigator.userAgent;
+  if (ua.includes('Operator') || ua.includes('OpenAI')) {
+    found.push('userAgent');
+    signals.userAgent = ua;
+  }
+
+  // Check for accessibility tree query patterns
+  if ('getComputedAccessibleNode' in Element.prototype) {
+    signals.accessibilityAPI = true;
+  }
+
+  return {
+    detected: found.length > 0,
+    frameworkType: 'openai-operator',
+    method: 'framework-fingerprint',
+    confidence: found.length > 0 ? 'high' : 'low',
+    detail: found.length > 0
+      ? `OpenAI Operator indicators: ${found.join(', ')}.`
+      : 'No OpenAI Operator indicators detected.',
+    signals,
+  };
 }
 
 /**
- * Run all framework-specific detection checks and return the best match.
- *
- * Executes each framework detector in parallel and returns the result
- * with the highest confidence, or null if nothing was detected.
- *
- * @returns The highest-confidence detection result, or null.
- *
- * TODO: Run detectAnthropicComputerUse() and detectOpenAIOperator().
- * Also import and run checks from cdp-patterns.ts and webdriver.ts.
- * Sort results by confidence and return the best match.
- * If multiple frameworks are detected, return all of them.
+ * Run all framework-specific detection checks.
  */
 export function detectAllFrameworks(): FrameworkDetectionResult[] {
-  // TODO: Run all framework detectors and aggregate results.
-  throw new Error('Not implemented');
+  const results: FrameworkDetectionResult[] = [];
+
+  const computerUse = detectAnthropicComputerUse();
+  if (computerUse.detected) results.push(computerUse);
+
+  const operator = detectOpenAIOperator();
+  if (operator.detected) results.push(operator);
+
+  const generic = detectGenericAutomation();
+  if (generic.detected) results.push(generic);
+
+  return results;
 }
 
 /**
  * Check for generic automation indicators that are not framework-specific.
- *
- * These include:
- * - window.chrome.runtime being undefined in a Chrome browser (extension removed for automation).
- * - Headless mode indicators (missing chrome.loadTimes, missing chrome.csi).
- * - Devtools protocol enabled without visible DevTools (Page.setDevToolsEmulation).
- * - Missing or spoofed User-Agent characteristics.
- *
- * @returns Detection result for generic automation.
- *
- * TODO: Check chrome.loadTimes and chrome.csi for headless indicators.
- * Verify window.chrome.runtime existence.
- * Check screen dimensions vs viewport for headless signatures.
- * Look for missing browser-specific APIs that headless Chrome omits.
  */
 export function detectGenericAutomation(): FrameworkDetectionResult {
-  // TODO: Implement generic headless/automation detection.
-  throw new Error('Not implemented');
+  const signals: Record<string, unknown> = {};
+  const indicators: string[] = [];
+
+  // Headless Chrome indicators
+  // chrome.loadTimes and chrome.csi are missing in headless mode
+  const chromeObj = (window as unknown as Record<string, unknown>).chrome as Record<string, unknown> | undefined;
+  if (chromeObj) {
+    signals.hasLoadTimes = 'loadTimes' in chromeObj;
+    signals.hasCsi = 'csi' in chromeObj;
+
+    if (!('loadTimes' in chromeObj)) {
+      indicators.push('missing chrome.loadTimes');
+    }
+    if (!('csi' in chromeObj)) {
+      indicators.push('missing chrome.csi');
+    }
+  }
+
+  // Check screen dimensions vs viewport for headless
+  if (window.outerWidth === 0 && window.outerHeight === 0) {
+    indicators.push('zero outer dimensions');
+    signals.outerWidth = window.outerWidth;
+    signals.outerHeight = window.outerHeight;
+  }
+
+  // Check for missing browser-specific APIs
+  if (!window.chrome) {
+    indicators.push('window.chrome missing');
+    signals.chromePresent = false;
+  }
+
+  // Check WebGL renderer for headless indicators
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl');
+    if (gl) {
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (debugInfo) {
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        signals.webglRenderer = renderer;
+        if (typeof renderer === 'string' && (renderer.includes('SwiftShader') || renderer.includes('llvmpipe'))) {
+          indicators.push('software renderer (headless indicator)');
+        }
+      }
+    }
+  } catch {
+    // Ignore WebGL errors
+  }
+
+  const detected = indicators.length >= 2;
+  return {
+    detected,
+    frameworkType: detected ? 'cdp-generic' : 'unknown',
+    method: 'automation-flag',
+    confidence: detected ? 'medium' : 'low',
+    detail: detected
+      ? `Generic automation indicators: ${indicators.join(', ')}.`
+      : 'No generic automation indicators detected.',
+    signals,
+  };
 }

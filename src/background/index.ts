@@ -1,205 +1,411 @@
 /**
  * Background service worker entry point.
  *
- * Central coordinator for the extension. Manages:
- * - Session state and persistence.
- * - Message routing between content scripts and popup.
- * - Delegation rule storage and distribution.
- * - Kill switch execution.
- * - Badge and icon updates.
+ * Central coordinator for the extension.
  */
 
-import type { MessagePayload, MessageType, DetectionEvent, KillSwitchEvent } from '../types/events';
+import type { MessagePayload, DetectionEvent, KillSwitchEvent, AgentEvent, BoundaryViolation } from '../types/events';
 import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
-import type { AgentSession, StorageSchema } from '../session/types';
+import type { AgentSession } from '../session/types';
+import { getStorageState, saveSession, updateSession, saveDelegationRules, appendDetectionLog, updateSettings } from '../session/storage';
+import { createTimelineEvent, appendEventToSession } from '../session/timeline';
+import { executeBackgroundKillSwitch, createInitialKillSwitchState } from '../killswitch/index';
+import type { KillSwitchState } from '../killswitch/index';
+import { isTimeBoundExpired } from '../delegation/rules';
+import { setupNotificationHandlers, clearAllNotifications } from '../alerts/notification';
+import { createBoundaryAlert } from '../alerts/boundary';
+import type { BoundaryAlert } from '../alerts/boundary';
 
-/**
- * In-memory state for the background service worker.
- * Kept in sync with chrome.storage.local but cached for fast access.
- */
 interface BackgroundState {
-  /** Currently active agent sessions indexed by tab ID. */
   activeAgents: Map<number, AgentIdentity>;
-
-  /** Active delegation rules. */
+  activeSessions: Map<number, string>; // tabId -> sessionId
   delegationRules: DelegationRule[];
-
-  /** Whether the kill switch is in effect (blocks all agents globally). */
-  killSwitchActive: boolean;
+  killSwitch: KillSwitchState;
+  recentAlerts: BoundaryAlert[];
 }
 
-/**
- * Global state instance.
- */
 const state: BackgroundState = {
   activeAgents: new Map(),
+  activeSessions: new Map(),
   delegationRules: [],
-  killSwitchActive: false,
+  killSwitch: createInitialKillSwitchState(),
+  recentAlerts: [],
 };
 
-/**
- * Initialize the background service worker.
- *
- * Lifecycle:
- * 1. Load persisted state from chrome.storage.local.
- * 2. Set up message listener for content scripts and popup.
- * 3. Set up tab lifecycle listeners (tab removed = session ended).
- * 4. Set up alarm for delegation time bound expiration checks.
- * 5. Update extension badge to reflect current state.
- *
- * TODO: Call loadPersistedState() to restore from storage.
- * Add chrome.runtime.onMessage listener routing to handleMessage.
- * Add chrome.tabs.onRemoved listener to handle tab closure.
- * Add chrome.alarms.onAlarm listener for delegation expiry checks.
- * Create a repeating alarm (every 60s) to check delegation expiration.
- * Update badge text and color based on active agents.
- */
 function initialize(): void {
-  // TODO: Load state, set up listeners, configure alarms.
+  loadPersistedState().then(() => {
+    updateBadge();
+  }).catch((err) => {
+    console.error('[AI Browser Guard] Failed to load state:', err);
+  });
+
+  // Message routing
+  chrome.runtime.onMessage.addListener(handleMessage);
+
+  // Tab lifecycle
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    handleTabRemoved(tabId).catch(() => { /* ignore */ });
+  });
+
+  // Delegation expiration alarm
+  chrome.alarms.create('delegation-check', { periodInMinutes: 1 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'delegation-check') {
+      checkDelegationExpiration().catch(() => { /* ignore */ });
+    }
+  });
+
+  // Kill switch keyboard shortcut
+  registerKeyboardShortcut();
+
+  // Notification handlers
+  setupNotificationHandlers((notificationId) => {
+    // Handle "Allow once" clicks - future enhancement
+    console.log('[AI Browser Guard] Override requested for notification:', notificationId);
+  });
+
   console.log('[AI Browser Guard] Background service worker initialized');
 }
 
-/**
- * Load persisted state from chrome.storage.local.
- *
- * TODO: Use storage.getStorageState() to load all data.
- * Populate state.delegationRules from storage.
- * Reconstruct activeAgents from any sessions that were marked active.
- */
 async function loadPersistedState(): Promise<void> {
-  // TODO: Load from chrome.storage.local and populate in-memory state.
-  throw new Error('Not implemented');
+  const stored = await getStorageState();
+  state.delegationRules = stored.delegationRules;
+
+  // Check for active sessions that may have survived a restart
+  for (const session of stored.sessions) {
+    if (!session.endedAt) {
+      // Mark stale sessions as ended
+      await updateSession(session.id, (s) => ({
+        ...s,
+        endedAt: new Date().toISOString(),
+        endReason: 'agent-disconnected',
+      }));
+    }
+  }
 }
 
-/**
- * Handle incoming messages from content scripts and popup.
- *
- * Message routing:
- * - DETECTION_RESULT: Process new agent detection from content script.
- * - AGENT_ACTION: Log agent action to session timeline.
- * - BOUNDARY_CHECK_REQUEST: Content script asks if action is allowed.
- * - KILL_SWITCH_ACTIVATE: Execute emergency kill across all tabs.
- * - DELEGATION_UPDATE: New delegation rule from popup wizard.
- * - SESSION_QUERY: Popup requests session data.
- * - STATUS_QUERY: Popup requests current status.
- * - SETTINGS_UPDATE: User changed settings in popup.
- *
- * @param message - The incoming message.
- * @param sender - The message sender.
- * @param sendResponse - Response callback.
- *
- * TODO: Route each message type to its handler function.
- * Return true for async responses.
- */
 function handleMessage(
   message: MessagePayload,
   sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void
 ): boolean {
-  // TODO: Parse message.type and route to handler.
-  return false;
+  if (!message || !message.type) return false;
+
+  const tabId = sender.tab?.id;
+
+  switch (message.type) {
+    case 'DETECTION_RESULT': {
+      if (tabId !== undefined) {
+        handleDetection(tabId, message.data as DetectionEvent).then(() => {
+          sendResponse({ success: true });
+        }).catch(() => {
+          sendResponse({ success: false });
+        });
+        return true; // async response
+      }
+      return false;
+    }
+
+    case 'AGENT_ACTION': {
+      if (tabId !== undefined) {
+        handleAgentAction(tabId, message.data as AgentEvent);
+      }
+      sendResponse({ success: true });
+      return false;
+    }
+
+    case 'BOUNDARY_CHECK_REQUEST': {
+      const violation = message.data as BoundaryViolation;
+      handleBoundaryViolation(tabId, violation);
+      sendResponse({ success: true });
+      return false;
+    }
+
+    case 'KILL_SWITCH_ACTIVATE': {
+      executeKillSwitch(
+        (message.data as { trigger?: string })?.trigger as 'button' | 'keyboard-shortcut' | 'api' ?? 'button'
+      ).then((event) => {
+        sendResponse({ success: true, event });
+      }).catch(() => {
+        sendResponse({ success: false });
+      });
+      return true; // async response
+    }
+
+    case 'DELEGATION_UPDATE': {
+      const rule = message.data as DelegationRule;
+      handleDelegationUpdate(rule).then(() => {
+        sendResponse({ success: true });
+      }).catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
+    case 'SESSION_QUERY': {
+      getStorageState().then((stored) => {
+        sendResponse({ sessions: stored.sessions });
+      }).catch(() => {
+        sendResponse({ sessions: [] });
+      });
+      return true;
+    }
+
+    case 'STATUS_QUERY': {
+      const agents = Array.from(state.activeAgents.values());
+      const activeRule = state.delegationRules.find((r) => r.isActive) ?? null;
+      sendResponse({
+        detectedAgents: agents,
+        activeDelegation: activeRule,
+        killSwitchActive: state.killSwitch.isActive,
+        recentViolations: state.recentAlerts,
+        delegationRules: state.delegationRules,
+      });
+      return false;
+    }
+
+    case 'SETTINGS_UPDATE': {
+      const updates = message.data as Record<string, unknown>;
+      updateSettings(updates).then(() => {
+        sendResponse({ success: true });
+      }).catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
+    default:
+      return false;
+  }
 }
 
-/**
- * Process a detection result from a content script.
- *
- * @param tabId - The tab where detection occurred.
- * @param event - The detection event.
- *
- * TODO: If agent detected, add to activeAgents map.
- * Create or update AgentSession in storage.
- * Update extension badge (e.g., show agent count).
- * Broadcast detection to popup if open.
- * Log detection event.
- */
 async function handleDetection(tabId: number, event: DetectionEvent): Promise<void> {
-  // TODO: Process detection and update state.
-  throw new Error('Not implemented');
+  if (!event.agent) return;
+
+  state.activeAgents.set(tabId, event.agent);
+
+  // Create a new session
+  const session: AgentSession = {
+    id: crypto.randomUUID(),
+    agent: event.agent,
+    delegationRule: state.delegationRules.find((r) => r.isActive) ?? null,
+    events: [],
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    endReason: null,
+    summary: {
+      totalActions: 0,
+      allowedActions: 0,
+      blockedActions: 0,
+      violations: 0,
+      topUrls: [],
+      durationSeconds: null,
+    },
+  };
+
+  // Add detection event to timeline
+  const timelineEvent = createTimelineEvent('detection', event.url, `Agent detected: ${event.agent.type}`, {
+    outcome: 'informational',
+  });
+  const updatedSession = appendEventToSession(session, timelineEvent);
+
+  await saveSession(updatedSession);
+  state.activeSessions.set(tabId, updatedSession.id);
+
+  // Log detection
+  await appendDetectionLog(event);
+
+  updateBadge();
 }
 
-/**
- * Execute the emergency kill switch.
- *
- * Steps:
- * 1. Set killSwitchActive = true.
- * 2. Send KILL_SWITCH_ACTIVATE to all content scripts in all tabs.
- * 3. Revoke all active delegation tokens.
- * 4. Clear all active agent sessions.
- * 5. Update badge to show kill switch is active.
- * 6. Log KillSwitchEvent.
- * 7. Show Chrome notification confirming termination.
- *
- * @param trigger - How the kill switch was activated.
- * @returns The kill switch event for logging.
- *
- * TODO: Query all tabs and send kill command to each.
- * Revoke delegation rules by setting isActive = false.
- * Clear activeAgents map.
- * Persist state changes.
- * Create and return KillSwitchEvent.
- */
+function handleAgentAction(tabId: number, event: AgentEvent): void {
+  const sessionId = state.activeSessions.get(tabId);
+  if (!sessionId) return;
+
+  updateSession(sessionId, (session) => appendEventToSession(session, event)).catch(() => {
+    // Ignore storage errors for individual events
+  });
+}
+
+function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryViolation): void {
+  const activeRule = state.delegationRules.find((r) => r.isActive);
+  if (!activeRule) return;
+
+  const alert = createBoundaryAlert(violation, activeRule);
+  state.recentAlerts.push(alert);
+  if (state.recentAlerts.length > 20) {
+    state.recentAlerts.shift();
+  }
+
+  // Log the violation as a timeline event if we have a session
+  if (tabId !== undefined) {
+    const sessionId = state.activeSessions.get(tabId);
+    if (sessionId) {
+      const event = createTimelineEvent('boundary-violation', violation.url,
+        `Violation: ${violation.attemptedAction} blocked`, {
+          attemptedAction: violation.attemptedAction,
+          outcome: 'blocked',
+          ruleId: violation.blockingRuleId,
+          targetSelector: violation.targetSelector,
+        });
+      updateSession(sessionId, (session) => appendEventToSession(session, event)).catch(() => { /* ignore */ });
+    }
+  }
+}
+
+async function handleDelegationUpdate(rule: DelegationRule): Promise<void> {
+  // Deactivate all existing rules
+  for (const r of state.delegationRules) {
+    r.isActive = false;
+  }
+
+  // Add or update the new rule
+  const existingIndex = state.delegationRules.findIndex((r) => r.id === rule.id);
+  if (existingIndex >= 0) {
+    state.delegationRules[existingIndex] = rule;
+  } else {
+    state.delegationRules.push(rule);
+  }
+
+  await saveDelegationRules(state.delegationRules);
+
+  // Broadcast to all content scripts
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'DELEGATION_UPDATE',
+        data: rule,
+        sentAt: new Date().toISOString(),
+      });
+    } catch {
+      // Tab may not have content script
+    }
+  }
+
+  updateBadge();
+}
+
 async function executeKillSwitch(
   trigger: 'button' | 'keyboard-shortcut' | 'api'
 ): Promise<KillSwitchEvent> {
-  // TODO: Implement emergency kill switch logic.
-  throw new Error('Not implemented');
+  const agentIds = Array.from(state.activeAgents.values()).map((a) => a.id);
+
+  const event = await executeBackgroundKillSwitch(trigger, agentIds, []);
+
+  state.killSwitch.isActive = true;
+  state.killSwitch.lastEvent = event;
+  state.killSwitch.lastActivatedAt = event.timestamp;
+
+  // Clear active agents
+  state.activeAgents.clear();
+
+  // Deactivate all delegation rules
+  for (const rule of state.delegationRules) {
+    rule.isActive = false;
+  }
+  await saveDelegationRules(state.delegationRules);
+
+  // End all active sessions
+  for (const [tabId, sessionId] of state.activeSessions.entries()) {
+    await updateSession(sessionId, (session) => ({
+      ...session,
+      endedAt: new Date().toISOString(),
+      endReason: 'kill-switch' as const,
+    }));
+    state.activeSessions.delete(tabId);
+  }
+
+  await clearAllNotifications();
+  updateBadge();
+
+  return event;
 }
 
-/**
- * Update the extension badge based on current state.
- *
- * Badge states:
- * - No agents: No badge text, default icon.
- * - Agent detected: Badge shows agent count, yellow background.
- * - Kill switch active: Badge shows "X", red background.
- * - Delegation active: Badge shows checkmark, green background.
- *
- * TODO: Use chrome.action.setBadgeText and setBadgeBackgroundColor.
- * Determine state priority: kill switch > detection > delegation > idle.
- */
 function updateBadge(): void {
-  // TODO: Update badge text and color based on current state.
+  try {
+    if (state.killSwitch.isActive) {
+      chrome.action.setBadgeText({ text: 'X' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+      return;
+    }
+
+    const agentCount = state.activeAgents.size;
+    if (agentCount > 0) {
+      chrome.action.setBadgeText({ text: String(agentCount) });
+      chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+      return;
+    }
+
+    const hasActiveDelegation = state.delegationRules.some((r) => r.isActive);
+    if (hasActiveDelegation) {
+      chrome.action.setBadgeText({ text: '' });
+      chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
+      return;
+    }
+
+    chrome.action.setBadgeText({ text: '' });
+  } catch {
+    // Badge API may not be available in all contexts
+  }
 }
 
-/**
- * Handle tab closure. End any active session for that tab.
- *
- * @param tabId - The ID of the closed tab.
- *
- * TODO: If activeAgents has this tab, end the session.
- * Update session endedAt and endReason to 'page-unload'.
- * Remove from activeAgents map.
- * Persist updated session to storage.
- */
 async function handleTabRemoved(tabId: number): Promise<void> {
-  // TODO: End session for closed tab.
-  throw new Error('Not implemented');
+  const sessionId = state.activeSessions.get(tabId);
+  if (sessionId) {
+    await updateSession(sessionId, (session) => ({
+      ...session,
+      endedAt: new Date().toISOString(),
+      endReason: 'page-unload' as const,
+    }));
+    state.activeSessions.delete(tabId);
+  }
+  state.activeAgents.delete(tabId);
+  updateBadge();
 }
 
-/**
- * Handle delegation expiration alarms.
- * Called every 60 seconds to check if any delegation has expired.
- *
- * TODO: Iterate active delegation rules.
- * If any have expired time bounds, deactivate them.
- * Send DELEGATION_UPDATE to affected content scripts.
- * Update badge.
- */
 async function checkDelegationExpiration(): Promise<void> {
-  // TODO: Check all active delegations for expiry.
-  throw new Error('Not implemented');
+  let changed = false;
+  for (const rule of state.delegationRules) {
+    if (rule.isActive && isTimeBoundExpired(rule.scope.timeBound)) {
+      rule.isActive = false;
+      changed = true;
+
+      // Notify content scripts
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (tab.id === undefined) continue;
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'DELEGATION_UPDATE',
+            data: null,
+            sentAt: new Date().toISOString(),
+          });
+        } catch {
+          // Tab may not have content script
+        }
+      }
+    }
+  }
+
+  if (changed) {
+    await saveDelegationRules(state.delegationRules);
+    updateBadge();
+  }
 }
 
-/**
- * Register keyboard shortcut for kill switch.
- *
- * TODO: Use chrome.commands API to register Ctrl+Shift+K / Cmd+Shift+K.
- * On command, call executeKillSwitch('keyboard-shortcut').
- */
 function registerKeyboardShortcut(): void {
-  // TODO: Register chrome.commands listener for kill switch shortcut.
+  try {
+    chrome.commands.onCommand.addListener((command) => {
+      if (command === 'kill-switch') {
+        executeKillSwitch('keyboard-shortcut').catch(() => { /* ignore */ });
+      }
+    });
+  } catch {
+    // Commands API may not be available
+  }
 }
 
-// Initialize when service worker starts
 initialize();

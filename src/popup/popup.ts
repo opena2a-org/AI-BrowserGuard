@@ -1,9 +1,7 @@
 /**
  * Popup script for AI Browser Guard.
  *
- * Controls the extension popup UI: status display, kill switch button,
- * delegation wizard, violation list, and session timeline.
- * Communicates with the background service worker via chrome.runtime messages.
+ * Controls the extension popup UI.
  */
 
 import type { MessagePayload, MessageType } from '../types/events';
@@ -11,38 +9,19 @@ import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
 import type { AgentSession } from '../session/types';
 import type { BoundaryAlert } from '../alerts/boundary';
+import { createInitialWizardState, renderWizard, finalizeWizard } from '../delegation/wizard';
 import type { WizardState } from '../delegation/wizard';
 
-/**
- * Popup UI state.
- * Mirrors relevant background state for rendering.
- */
 interface PopupState {
-  /** Currently detected agents (from background). */
   detectedAgents: AgentIdentity[];
-
-  /** Active delegation rule. */
   activeDelegation: DelegationRule | null;
-
-  /** Whether the kill switch is active. */
   killSwitchActive: boolean;
-
-  /** Recent boundary violations for display. */
   recentViolations: BoundaryAlert[];
-
-  /** Recent session data for timeline display. */
   sessions: AgentSession[];
-
-  /** Delegation wizard state, if wizard is open. */
   wizardState: WizardState | null;
-
-  /** Whether the popup is currently loading data from background. */
   loading: boolean;
 }
 
-/**
- * Global popup state.
- */
 let popupState: PopupState = {
   detectedAgents: [],
   activeDelegation: null,
@@ -53,51 +32,47 @@ let popupState: PopupState = {
   loading: true,
 };
 
-/**
- * Initialize the popup.
- *
- * Lifecycle:
- * 1. Query background for current status.
- * 2. Render the UI based on received state.
- * 3. Set up event listeners for buttons.
- * 4. Set up message listener for live updates.
- *
- * TODO: Send STATUS_QUERY to background.
- * On response, populate popupState with current detection, delegation, and session data.
- * Call render functions for each panel.
- * Attach click handler to kill switch button.
- * Attach click handler to delegation wizard button.
- * Add chrome.runtime.onMessage listener for live updates from background.
- */
 function initialize(): void {
-  // TODO: Query background, populate state, render, attach listeners.
   document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     queryBackgroundStatus();
   });
 }
 
-/**
- * Query the background service worker for current status.
- *
- * TODO: Send STATUS_QUERY message via chrome.runtime.sendMessage.
- * On response, update popupState fields.
- * Call renderAll() to update the UI.
- * Set loading to false.
- */
 async function queryBackgroundStatus(): Promise<void> {
-  // TODO: Send status query and update state.
+  try {
+    const response = await sendToBackground('STATUS_QUERY', {});
+    if (response && typeof response === 'object') {
+      const data = response as {
+        detectedAgents?: AgentIdentity[];
+        activeDelegation?: DelegationRule | null;
+        killSwitchActive?: boolean;
+        recentViolations?: BoundaryAlert[];
+      };
+      popupState.detectedAgents = data.detectedAgents ?? [];
+      popupState.activeDelegation = data.activeDelegation ?? null;
+      popupState.killSwitchActive = data.killSwitchActive ?? false;
+      popupState.recentViolations = data.recentViolations ?? [];
+    }
+  } catch {
+    // Background may not be available
+  }
+
+  // Also fetch sessions
+  try {
+    const sessionResponse = await sendToBackground('SESSION_QUERY', {});
+    if (sessionResponse && typeof sessionResponse === 'object') {
+      const data = sessionResponse as { sessions?: AgentSession[] };
+      popupState.sessions = data.sessions ?? [];
+    }
+  } catch {
+    // Ignore
+  }
+
   popupState.loading = false;
   renderAll();
 }
 
-/**
- * Set up event listeners for all interactive elements.
- *
- * TODO: Attach click handler to #kill-switch-btn -> onKillSwitchClick.
- * Attach click handler to #delegation-wizard-btn -> onDelegationWizardClick.
- * Add chrome.runtime.onMessage listener for background broadcasts.
- */
 function setupEventListeners(): void {
   const killSwitchBtn = document.getElementById('kill-switch-btn');
   if (killSwitchBtn) {
@@ -108,38 +83,83 @@ function setupEventListeners(): void {
   if (wizardBtn) {
     wizardBtn.addEventListener('click', onDelegationWizardClick);
   }
+
+  // Listen for live updates from background
+  chrome.runtime.onMessage.addListener((message: MessagePayload) => {
+    if (!message || !message.type) return;
+
+    switch (message.type) {
+      case 'DETECTION_RESULT':
+        queryBackgroundStatus();
+        break;
+      case 'KILL_SWITCH_RESULT':
+        popupState.killSwitchActive = true;
+        renderAll();
+        break;
+      case 'DELEGATION_UPDATE':
+        queryBackgroundStatus();
+        break;
+    }
+  });
+
+  // Listen for delegation activation from wizard
+  document.addEventListener('delegation-activated', ((e: CustomEvent<DelegationRule>) => {
+    const rule = e.detail;
+    sendToBackground('DELEGATION_UPDATE', rule).then(() => {
+      popupState.activeDelegation = rule;
+      popupState.wizardState = null;
+      const wizardContainer = document.getElementById('wizard-container');
+      if (wizardContainer) {
+        wizardContainer.classList.add('hidden');
+        wizardContainer.innerHTML = '';
+      }
+      renderAll();
+    }).catch(() => {
+      // Show error
+    });
+  }) as EventListener);
 }
 
-/**
- * Handle kill switch button click.
- *
- * TODO: Send KILL_SWITCH_ACTIVATE message to background.
- * On response, update popupState.killSwitchActive = true.
- * Render kill switch panel to show confirmation.
- * Disable the button to prevent double-click.
- */
 async function onKillSwitchClick(): Promise<void> {
-  // TODO: Send kill switch command to background and update UI.
-}
+  const btn = document.getElementById('kill-switch-btn') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
 
-/**
- * Handle delegation wizard button click.
- *
- * TODO: Toggle wizard visibility.
- * If showing, initialize wizard state and render wizard.
- * If hiding, clear wizard state.
- */
-function onDelegationWizardClick(): void {
-  // TODO: Show/hide delegation wizard.
-  const wizardContainer = document.getElementById('wizard-container');
-  if (wizardContainer) {
-    wizardContainer.classList.toggle('hidden');
+  try {
+    await sendToBackground('KILL_SWITCH_ACTIVATE', { trigger: 'button' });
+    popupState.killSwitchActive = true;
+    popupState.detectedAgents = [];
+    popupState.activeDelegation = null;
+    renderAll();
+  } catch {
+    if (btn) btn.disabled = false;
   }
 }
 
-/**
- * Render all UI panels based on current state.
- */
+function onDelegationWizardClick(): void {
+  const wizardContainer = document.getElementById('wizard-container');
+  if (!wizardContainer) return;
+
+  if (wizardContainer.classList.contains('hidden')) {
+    wizardContainer.classList.remove('hidden');
+    popupState.wizardState = createInitialWizardState();
+    renderWizardUI();
+  } else {
+    wizardContainer.classList.add('hidden');
+    wizardContainer.innerHTML = '';
+    popupState.wizardState = null;
+  }
+}
+
+function renderWizardUI(): void {
+  const wizardContainer = document.getElementById('wizard-container');
+  if (!wizardContainer || !popupState.wizardState) return;
+
+  renderWizard(wizardContainer, popupState.wizardState, (newState) => {
+    popupState.wizardState = newState;
+    renderWizardUI();
+  });
+}
+
 function renderAll(): void {
   renderDetectionPanel();
   renderKillSwitchPanel();
@@ -149,34 +169,40 @@ function renderAll(): void {
   renderStatusBadge();
 }
 
-/**
- * Render the detection status panel.
- *
- * TODO: Get #detection-content element.
- * If agents detected, show detection cards with agent type, confidence, methods.
- * If no agents, show placeholder text.
- * Enable kill switch button if agents are detected.
- */
 function renderDetectionPanel(): void {
   const container = document.getElementById('detection-content');
   if (!container) return;
+
+  if (popupState.loading) {
+    container.innerHTML = '<p class="placeholder-text">Loading...</p>';
+    return;
+  }
 
   if (popupState.detectedAgents.length === 0) {
     container.innerHTML = '<p class="placeholder-text">No agents detected on this page.</p>';
     return;
   }
 
-  // TODO: Render detection card for each detected agent.
-  // Include: agent type, confidence level, detection methods as tags.
+  container.innerHTML = '';
+  for (const agent of popupState.detectedAgents) {
+    const card = document.createElement('div');
+    card.className = 'detection-card';
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <strong style="font-size: 13px;">${formatAgentType(agent.type)}</strong>
+        <span class="confidence-label confidence-${agent.confidence}">${agent.confidence}</span>
+      </div>
+      <div style="font-size: 11px; color: var(--text-secondary);">
+        Detected: ${formatTimestamp(agent.detectedAt)}
+      </div>
+      <div style="margin-top: 4px;">
+        ${agent.detectionMethods.map((m) => `<span class="method-tag">${m}</span>`).join(' ')}
+      </div>
+    `;
+    container.appendChild(card);
+  }
 }
 
-/**
- * Render the kill switch panel state.
- *
- * TODO: Get #kill-switch-btn element.
- * Enable button if agents are detected.
- * If kill switch is active, change button text and style to show confirmed state.
- */
 function renderKillSwitchPanel(): void {
   const btn = document.getElementById('kill-switch-btn') as HTMLButtonElement | null;
   if (!btn) return;
@@ -186,57 +212,130 @@ function renderKillSwitchPanel(): void {
   if (popupState.killSwitchActive) {
     btn.textContent = 'Kill Switch Active - All Agents Terminated';
     btn.disabled = true;
+  } else {
+    btn.textContent = 'Emergency Kill Switch';
   }
 }
 
-/**
- * Render the delegation panel.
- *
- * TODO: Get #delegation-content element.
- * If active delegation, show delegation details (preset, time remaining, scope).
- * If no delegation, show setup prompt and wizard button.
- */
 function renderDelegationPanel(): void {
-  // TODO: Render delegation status or setup prompt.
+  const content = document.getElementById('delegation-content');
+  if (!content) return;
+
+  if (popupState.activeDelegation) {
+    const rule = popupState.activeDelegation;
+    const presetNames: Record<string, string> = {
+      readOnly: 'Read-Only',
+      limited: 'Limited Access',
+      fullAccess: 'Full Access',
+    };
+
+    let timeInfo = '';
+    if (rule.scope.timeBound) {
+      const remaining = new Date(rule.scope.timeBound.expiresAt).getTime() - Date.now();
+      if (remaining > 0) {
+        const mins = Math.ceil(remaining / 60000);
+        timeInfo = `<div style="font-size: 11px; color: var(--warning);">Expires in ${mins} minute(s)</div>`;
+      } else {
+        timeInfo = '<div style="font-size: 11px; color: var(--danger);">Expired</div>';
+      }
+    }
+
+    content.innerHTML = `
+      <div style="margin-bottom: 8px;">
+        <strong>Active: ${presetNames[rule.preset] ?? rule.preset}</strong>
+        ${rule.label ? `<span style="font-size: 11px; color: var(--text-secondary);"> - ${rule.label}</span>` : ''}
+      </div>
+      ${timeInfo}
+      <button id="delegation-wizard-btn" class="btn btn-secondary" style="margin-top: 8px;">Change Delegation</button>
+    `;
+
+    // Re-bind wizard button
+    const wizardBtn = document.getElementById('delegation-wizard-btn');
+    if (wizardBtn) {
+      wizardBtn.addEventListener('click', onDelegationWizardClick);
+    }
+  } else {
+    content.innerHTML = `
+      <p class="placeholder-text">No active delegation. Configure access rules before an agent connects.</p>
+      <button id="delegation-wizard-btn" class="btn btn-primary">Configure Delegation</button>
+    `;
+    const wizardBtn = document.getElementById('delegation-wizard-btn');
+    if (wizardBtn) {
+      wizardBtn.addEventListener('click', onDelegationWizardClick);
+    }
+  }
 }
 
-/**
- * Render the violations list.
- *
- * TODO: Get #violations-list element.
- * If violations exist, render each as an event-item with severity badge.
- * If no violations, show placeholder.
- */
 function renderViolationsPanel(): void {
-  // TODO: Render violation list items.
+  const container = document.getElementById('violations-list');
+  if (!container) return;
+
+  if (popupState.recentViolations.length === 0) {
+    container.innerHTML = '<p class="placeholder-text">No violations recorded.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+  for (const alert of popupState.recentViolations.slice(-10).reverse()) {
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    item.innerHTML = `
+      <div class="event-outcome outcome-blocked"></div>
+      <div style="flex: 1; min-width: 0;">
+        <div style="display: flex; justify-content: space-between;">
+          <span style="font-size: 12px; font-weight: 500;">${alert.title}</span>
+          <span class="severity-badge severity-${alert.severity}">${alert.severity}</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          ${truncateUrl(alert.violation.url)}
+        </div>
+        <div style="font-size: 10px; color: var(--text-muted);">
+          ${formatTimestamp(alert.violation.timestamp)}
+        </div>
+      </div>
+    `;
+    container.appendChild(item);
+  }
 }
 
-/**
- * Render the session timeline.
- *
- * TODO: Get #timeline-list element.
- * If sessions exist, render recent events with outcome indicators.
- * If no sessions, show placeholder.
- */
 function renderTimelinePanel(): void {
-  // TODO: Render timeline event items.
+  const container = document.getElementById('timeline-list');
+  if (!container) return;
+
+  // Get events from the most recent session
+  const latestSession = popupState.sessions[0];
+  if (!latestSession || latestSession.events.length === 0) {
+    container.innerHTML = '<p class="placeholder-text">No session activity.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+  const recentEvents = latestSession.events.slice(-15).reverse();
+  for (const event of recentEvents) {
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    const outcomeClass = event.outcome === 'allowed' ? 'outcome-allowed'
+      : event.outcome === 'blocked' ? 'outcome-blocked'
+      : 'outcome-info';
+
+    item.innerHTML = `
+      <div class="event-outcome ${outcomeClass}"></div>
+      <div style="flex: 1; min-width: 0;">
+        <div style="font-size: 12px;">${event.description}</div>
+        <div style="font-size: 10px; color: var(--text-muted);">
+          ${formatTimestamp(event.timestamp)} | ${truncateUrl(event.url, 30)}
+        </div>
+      </div>
+    `;
+    container.appendChild(item);
+  }
 }
 
-/**
- * Update the status badge in the header.
- *
- * Status priority: kill switch > detected > delegated > idle.
- *
- * TODO: Get #status-indicator and #status-text elements.
- * Remove all status-* classes.
- * Add appropriate class and text based on state.
- */
 function renderStatusBadge(): void {
   const indicator = document.getElementById('status-indicator');
   const statusText = document.getElementById('status-text');
   if (!indicator || !statusText) return;
 
-  // Remove all status classes
   indicator.classList.remove('status-idle', 'status-detected', 'status-killed', 'status-delegated');
 
   if (popupState.killSwitchActive) {
@@ -254,13 +353,6 @@ function renderStatusBadge(): void {
   }
 }
 
-/**
- * Send a typed message to the background service worker.
- *
- * @param type - The message type.
- * @param data - The message payload.
- * @returns Promise resolving to the response.
- */
 async function sendToBackground(type: MessageType, data: unknown): Promise<unknown> {
   const message: MessagePayload = {
     type,
@@ -279,12 +371,6 @@ async function sendToBackground(type: MessageType, data: unknown): Promise<unkno
   });
 }
 
-/**
- * Format a timestamp for display in the popup.
- *
- * @param isoTimestamp - ISO 8601 timestamp string.
- * @returns Formatted time string (e.g., "14:32:05").
- */
 function formatTimestamp(isoTimestamp: string): string {
   const date = new Date(isoTimestamp);
   return date.toLocaleTimeString(undefined, {
@@ -294,22 +380,32 @@ function formatTimestamp(isoTimestamp: string): string {
   });
 }
 
-/**
- * Truncate a URL for display in limited space.
- *
- * @param url - The full URL.
- * @param maxLength - Maximum display length.
- * @returns Truncated URL string.
- */
-function truncateUrl(url: string, maxLength: number = 40): string {
-  if (url.length <= maxLength) return url;
-  const parsed = new URL(url);
-  const host = parsed.hostname;
-  const path = parsed.pathname;
-  const available = maxLength - host.length - 3; // 3 for "..."
-  if (available <= 0) return host.substring(0, maxLength - 3) + '...';
-  return host + path.substring(0, available) + '...';
+function formatAgentType(type: string): string {
+  const names: Record<string, string> = {
+    playwright: 'Playwright',
+    puppeteer: 'Puppeteer',
+    selenium: 'Selenium',
+    'anthropic-computer-use': 'Anthropic Computer Use',
+    'openai-operator': 'OpenAI Operator',
+    'cdp-generic': 'CDP Agent',
+    'webdriver-generic': 'WebDriver Agent',
+    unknown: 'Unknown Agent',
+  };
+  return names[type] ?? type;
 }
 
-// Initialize popup
+function truncateUrl(url: string, maxLength: number = 40): string {
+  if (url.length <= maxLength) return url;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    const path = parsed.pathname;
+    const available = maxLength - host.length - 3;
+    if (available <= 0) return host.substring(0, maxLength - 3) + '...';
+    return host + path.substring(0, available) + '...';
+  } catch {
+    return url.substring(0, maxLength - 3) + '...';
+  }
+}
+
 initialize();
