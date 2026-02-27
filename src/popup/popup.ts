@@ -174,12 +174,12 @@ function renderDetectionPanel(): void {
   if (!container) return;
 
   if (popupState.loading) {
-    container.innerHTML = '<p class="placeholder-text">Loading...</p>';
+    container.innerHTML = '<p class="placeholder-text-inline">Loading...</p>';
     return;
   }
 
   if (popupState.detectedAgents.length === 0) {
-    container.innerHTML = '<p class="placeholder-text">No agents detected on this page.</p>';
+    container.innerHTML = '<p class="placeholder-text-inline">No agents detected</p>';
     return;
   }
 
@@ -188,14 +188,12 @@ function renderDetectionPanel(): void {
     const card = document.createElement('div');
     card.className = 'detection-card';
     card.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-        <strong style="font-size: 13px;">${formatAgentType(agent.type)}</strong>
-        <span class="confidence-label confidence-${agent.confidence}">${agent.confidence}</span>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+        <strong>${formatAgentType(agent.type)}</strong>
+        <span class="severity-badge severity-badge-high">${agent.confidence}</span>
       </div>
-      <div style="font-size: 11px; color: var(--text-secondary);">
-        Detected: ${formatTimestamp(agent.detectedAt)}
-      </div>
-      <div style="margin-top: 4px;">
+      <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">
+        ${formatTimestamp(agent.detectedAt)}
         ${agent.detectionMethods.map((m) => `<span class="method-tag">${m}</span>`).join(' ')}
       </div>
     `;
@@ -210,10 +208,10 @@ function renderKillSwitchPanel(): void {
   btn.disabled = popupState.detectedAgents.length === 0 && !popupState.killSwitchActive;
 
   if (popupState.killSwitchActive) {
-    btn.textContent = 'Kill Switch Active - All Agents Terminated';
+    btn.textContent = 'Killed';
     btn.disabled = true;
   } else {
-    btn.textContent = 'Emergency Kill Switch';
+    btn.textContent = 'Kill Switch';
   }
 }
 
@@ -225,7 +223,7 @@ function renderDelegationPanel(): void {
     const rule = popupState.activeDelegation;
     const presetNames: Record<string, string> = {
       readOnly: 'Read-Only',
-      limited: 'Limited Access',
+      limited: 'Limited',
       fullAccess: 'Full Access',
     };
 
@@ -234,30 +232,29 @@ function renderDelegationPanel(): void {
       const remaining = new Date(rule.scope.timeBound.expiresAt).getTime() - Date.now();
       if (remaining > 0) {
         const mins = Math.ceil(remaining / 60000);
-        timeInfo = `<div style="font-size: 11px; color: var(--warning);">Expires in ${mins} minute(s)</div>`;
+        timeInfo = `<span style="font-size: 12px; font-weight: 500; color: var(--color-warning);"> (${mins}m left)</span>`;
       } else {
-        timeInfo = '<div style="font-size: 11px; color: var(--danger);">Expired</div>';
+        timeInfo = '<span style="font-size: 12px; font-weight: 500; color: var(--color-danger);"> (expired)</span>';
       }
     }
 
     content.innerHTML = `
-      <div style="margin-bottom: 8px;">
-        <strong>Active: ${presetNames[rule.preset] ?? rule.preset}</strong>
-        ${rule.label ? `<span style="font-size: 11px; color: var(--text-secondary);"> - ${rule.label}</span>` : ''}
+      <div class="delegation-empty">
+        <span><strong>${presetNames[rule.preset] ?? rule.preset}</strong>${timeInfo}</span>
+        <button id="delegation-wizard-btn" class="btn btn-secondary btn-sm">Change</button>
       </div>
-      ${timeInfo}
-      <button id="delegation-wizard-btn" class="btn btn-secondary" style="margin-top: 8px;">Change Delegation</button>
     `;
 
-    // Re-bind wizard button
     const wizardBtn = document.getElementById('delegation-wizard-btn');
     if (wizardBtn) {
       wizardBtn.addEventListener('click', onDelegationWizardClick);
     }
   } else {
     content.innerHTML = `
-      <p class="placeholder-text">No active delegation. Configure access rules before an agent connects.</p>
-      <button id="delegation-wizard-btn" class="btn btn-primary">Configure Delegation</button>
+      <div class="delegation-empty">
+        <span class="placeholder-text-inline">No delegation active</span>
+        <button id="delegation-wizard-btn" class="btn btn-primary btn-sm">Configure</button>
+      </div>
     `;
     const wizardBtn = document.getElementById('delegation-wizard-btn');
     if (wizardBtn) {
@@ -267,14 +264,16 @@ function renderDelegationPanel(): void {
 }
 
 function renderViolationsPanel(): void {
+  const panel = document.getElementById('violations-panel');
   const container = document.getElementById('violations-list');
-  if (!container) return;
+  if (!container || !panel) return;
 
   if (popupState.recentViolations.length === 0) {
-    container.innerHTML = '<p class="placeholder-text">No violations recorded.</p>';
+    panel.classList.add('hidden');
     return;
   }
 
+  panel.classList.remove('hidden');
   container.innerHTML = '';
   for (const alert of popupState.recentViolations.slice(-10).reverse()) {
     const item = document.createElement('div');
@@ -283,13 +282,13 @@ function renderViolationsPanel(): void {
       <div class="event-outcome outcome-blocked"></div>
       <div style="flex: 1; min-width: 0;">
         <div style="display: flex; justify-content: space-between;">
-          <span style="font-size: 12px; font-weight: 500;">${alert.title}</span>
+          <span style="font-size: 13px; font-weight: 600;">${alert.title}</span>
           <span class="severity-badge severity-${alert.severity}">${alert.severity}</span>
         </div>
-        <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           ${truncateUrl(alert.violation.url)}
         </div>
-        <div style="font-size: 10px; color: var(--text-muted);">
+        <div style="font-size: 11px; color: var(--text-secondary); font-weight: 500;">
           ${formatTimestamp(alert.violation.timestamp)}
         </div>
       </div>
@@ -299,16 +298,17 @@ function renderViolationsPanel(): void {
 }
 
 function renderTimelinePanel(): void {
+  const panel = document.getElementById('timeline-panel');
   const container = document.getElementById('timeline-list');
-  if (!container) return;
+  if (!container || !panel) return;
 
-  // Get events from the most recent session
   const latestSession = popupState.sessions[0];
   if (!latestSession || latestSession.events.length === 0) {
-    container.innerHTML = '<p class="placeholder-text">No session activity.</p>';
+    panel.classList.add('hidden');
     return;
   }
 
+  panel.classList.remove('hidden');
   container.innerHTML = '';
   const recentEvents = latestSession.events.slice(-15).reverse();
   for (const event of recentEvents) {
@@ -321,8 +321,8 @@ function renderTimelinePanel(): void {
     item.innerHTML = `
       <div class="event-outcome ${outcomeClass}"></div>
       <div style="flex: 1; min-width: 0;">
-        <div style="font-size: 12px;">${event.description}</div>
-        <div style="font-size: 10px; color: var(--text-muted);">
+        <div style="font-size: 13px; font-weight: 500;">${event.description}</div>
+        <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">
           ${formatTimestamp(event.timestamp)} | ${truncateUrl(event.url, 30)}
         </div>
       </div>

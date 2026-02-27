@@ -26,8 +26,8 @@
   --bg-hover: #eff6ff;
 
   --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-muted: #9ca3af;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
 
   --border-default: #e5e7eb;
   --border-muted: #f3f4f6;
@@ -55,14 +55,14 @@
   --severity-medium: #d97706;
   --severity-low: #6b7280;
 
-  /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  /* Typography - Inter for readability */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', ui-monospace, monospace;
-  --font-size-xs: 10px;
-  --font-size-sm: 11px;
-  --font-size-base: 12px;
-  --font-size-lg: 13px;
-  --font-size-xl: 14px;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-lg: 14px;
+  --font-size-xl: 15px;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -364,14 +364,16 @@ body::-webkit-scrollbar-thumb:hover {
 
 .event-meta {
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   margin-top: 2px;
 }
 
 .event-url {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -416,7 +418,8 @@ body::-webkit-scrollbar-thumb:hover {
   border-radius: 3px;
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 /* ============================================================
@@ -548,12 +551,13 @@ kbd {
 
 .footer-text {
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .footer-separator {
   font-size: var(--font-size-xs);
-  color: var(--border-default);
+  color: var(--text-muted);
 }
 
 /* ============================================================
@@ -619,4 +623,87 @@ kbd {
 .input-field::placeholder,
 .form-input::placeholder {
   color: var(--text-muted);
+}
+
+/* ============================================================
+   Compact Layout - Header Actions & Kill Switch
+   ============================================================ */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+.header-shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.btn-danger-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  background-color: var(--color-danger);
+  color: #fff;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--border-radius);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-danger-compact:hover:not(:disabled) {
+  background-color: #b91c1c;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);
+}
+
+.btn-danger-compact:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Compact inline placeholders */
+.placeholder-text-inline {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Delegation empty state - inline row */
+.delegation-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: var(--font-size-sm);
+}
+
+/* Compact panel title */
+.panel-title-sm {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Collapsible panels */
+.panel-collapsible {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+/* Tighter gap for compact layout */
+#app {
+  gap: 6px;
 }
