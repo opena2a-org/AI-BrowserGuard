@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.*
+
+# Secrets
+*.key
+*.pem
+*.p12
+*.pfx
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+
+# Chrome extension packaging
+*.crx
+*.zip
+
+# Logs
+*.log
+npm-debug.log*

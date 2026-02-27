@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Browser Guard</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header with status indicator -->
+    <header id="header">
+      <div class="header-row">
+        <h1 class="header-title">AI Browser Guard</h1>
+        <div id="status-indicator" class="status-badge status-idle">
+          <span class="status-dot"></span>
+          <span id="status-text">Monitoring</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Detection status panel -->
+    <section id="detection-panel" class="panel">
+      <h2 class="panel-title">Detection Status</h2>
+      <div id="detection-content">
+        <p class="placeholder-text">No agents detected on this page.</p>
+      </div>
+    </section>
+
+    <!-- Kill switch -->
+    <section id="killswitch-panel" class="panel panel-danger">
+      <button id="kill-switch-btn" class="btn btn-danger" disabled>
+        Emergency Kill Switch
+      </button>
+      <p class="panel-hint">Terminate all agent connections and revoke permissions.</p>
+      <p class="panel-hint">Keyboard shortcut: <kbd>Ctrl+Shift+K</kbd></p>
+    </section>
+
+    <!-- Delegation controls -->
+    <section id="delegation-panel" class="panel">
+      <h2 class="panel-title">Delegation</h2>
+      <div id="delegation-content">
+        <p class="placeholder-text">No active delegation. Configure access rules before an agent connects.</p>
+        <button id="delegation-wizard-btn" class="btn btn-primary">Configure Delegation</button>
+      </div>
+      <!-- Wizard container (hidden by default) -->
+      <div id="wizard-container" class="hidden"></div>
+    </section>
+
+    <!-- Boundary violations -->
+    <section id="violations-panel" class="panel">
+      <h2 class="panel-title">Boundary Violations</h2>
+      <div id="violations-list" class="event-list">
+        <p class="placeholder-text">No violations recorded.</p>
+      </div>
+    </section>
+
+    <!-- Session timeline -->
+    <section id="timeline-panel" class="panel">
+      <h2 class="panel-title">Session Timeline</h2>
+      <div id="timeline-list" class="event-list">
+        <p class="placeholder-text">No session activity.</p>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer id="footer">
+      <span class="footer-text">AI Browser Guard v0.1.0</span>
+      <span class="footer-separator">|</span>
+      <span class="footer-text">Free Tier</span>
+    </footer>
+  </div>
+
+  <script type="module" src="./popup.ts"></script>
+</body>
+</html>
