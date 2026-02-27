@@ -1,9 +1,0 @@
-title = "AI Browser Guard - Gitleaks Config"
-
-[allowlist]
-  paths = [
-    '''node_modules''',
-    '''dist''',
-    '''\.github''',
-    '''package-lock\.json''',
-  ]
