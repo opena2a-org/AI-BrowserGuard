@@ -2,94 +2,97 @@
  * Capability boundary alert system.
  *
  * Generates alerts when an agent attempts actions that exceed its
- * delegated permissions. Provides the data needed for both in-popup
- * display and Chrome notification delivery.
+ * delegated permissions.
  */
 
-import type { BoundaryViolation, AgentEvent } from '../types/events';
+import type { BoundaryViolation } from '../types/events';
 import type { AgentCapability } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
 
-/**
- * Alert severity based on the type of violation.
- * - "critical": Action that could cause data loss or financial harm (e.g., form submission on banking site).
- * - "high": Action that modifies state (e.g., clicking a delete button).
- * - "medium": Action that could leak information (e.g., navigating to a blocked site).
- * - "low": Action that is out of scope but low risk (e.g., opening a new tab).
- */
 export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low';
 
-/**
- * A fully formed alert ready for display and notification.
- */
 export interface BoundaryAlert {
-  /** The underlying violation data. */
   violation: BoundaryViolation;
-
-  /** Computed severity of this alert. */
   severity: AlertSeverity;
-
-  /** Human-readable title for the alert (e.g., "Form submission blocked"). */
   title: string;
-
-  /** Detailed message explaining what happened and why it was blocked. */
   message: string;
-
-  /** Whether the user has the option to allow this action as a one-time override. */
   allowOneTimeOverride: boolean;
-
-  /** Whether this alert has been acknowledged by the user. */
   acknowledged: boolean;
 }
 
+const SENSITIVE_URL_PATTERNS = [
+  /\.bank\./i,
+  /\.gov\./i,
+  /paypal/i,
+  /stripe/i,
+  /\.financial/i,
+  /healthcare/i,
+  /\.mil\./i,
+];
+
 /**
  * Create a boundary alert from a violation.
- *
- * @param violation - The boundary violation that triggered this alert.
- * @param rule - The delegation rule that was violated.
- * @returns A fully formed alert for display.
- *
- * TODO: Determine severity based on the attempted action and URL.
- * Map capabilities to severity: submit-form/execute-script = critical,
- * click/modify-dom = high, navigate = medium, read-dom/open-tab = low.
- * Generate title and message from violation details.
- * Set allowOneTimeOverride to true for medium/low severity.
  */
 export function createBoundaryAlert(
   violation: BoundaryViolation,
   rule: DelegationRule
 ): BoundaryAlert {
-  // TODO: Build alert from violation and rule.
-  throw new Error('Not implemented');
+  const severity = classifyViolationSeverity(violation.attemptedAction, violation.url);
+  const title = generateAlertTitle(violation.attemptedAction);
+  const message = generateAlertMessage(violation, rule.label ?? rule.preset);
+
+  return {
+    violation,
+    severity,
+    title,
+    message,
+    allowOneTimeOverride: severity === 'medium' || severity === 'low',
+    acknowledged: false,
+  };
 }
 
 /**
  * Determine the severity of a capability violation.
- *
- * @param capability - The capability that was attempted.
- * @param url - The URL where it was attempted.
- * @returns The computed severity.
- *
- * TODO: Map capabilities to base severity.
- * Upgrade severity if URL matches sensitive patterns (e.g., *.bank.com, *.gov).
- * Return the final severity.
  */
 export function classifyViolationSeverity(
   capability: AgentCapability,
   url: string
 ): AlertSeverity {
-  // TODO: Classify severity based on capability and URL sensitivity.
-  throw new Error('Not implemented');
+  const baseSeverityMap: Record<AgentCapability, AlertSeverity> = {
+    'submit-form': 'critical',
+    'execute-script': 'critical',
+    'download-file': 'high',
+    'modify-dom': 'high',
+    click: 'high',
+    'type-text': 'medium',
+    navigate: 'medium',
+    'open-tab': 'low',
+    'close-tab': 'low',
+    'read-dom': 'low',
+    screenshot: 'low',
+  };
+
+  let severity = baseSeverityMap[capability] ?? 'medium';
+
+  // Upgrade severity for sensitive URLs
+  const isSensitive = SENSITIVE_URL_PATTERNS.some((pattern) => pattern.test(url));
+  if (isSensitive) {
+    const upgrade: Record<AlertSeverity, AlertSeverity> = {
+      low: 'medium',
+      medium: 'high',
+      high: 'critical',
+      critical: 'critical',
+    };
+    severity = upgrade[severity];
+  }
+
+  return severity;
 }
 
 /**
- * Generate a human-readable alert title from a capability violation.
- *
- * @param capability - The attempted capability.
- * @returns A concise title string (e.g., "Form submission blocked").
+ * Generate a human-readable alert title.
  */
 export function generateAlertTitle(capability: AgentCapability): string {
-  // TODO: Map each capability to a descriptive title.
   const titles: Record<AgentCapability, string> = {
     navigate: 'Navigation blocked',
     'read-dom': 'Page read blocked',
@@ -108,42 +111,32 @@ export function generateAlertTitle(capability: AgentCapability): string {
 
 /**
  * Generate a detailed alert message.
- *
- * @param violation - The violation details.
- * @param ruleName - The name of the rule that blocked the action.
- * @returns A multi-line message suitable for notification display.
- *
- * TODO: Format message with: what was attempted, on which URL,
- * which rule blocked it, and what the user can do.
  */
 export function generateAlertMessage(
   violation: BoundaryViolation,
   ruleName: string
 ): string {
-  // TODO: Build detailed message from violation and rule name.
-  throw new Error('Not implemented');
+  const lines = [
+    `An agent attempted to perform "${violation.attemptedAction}" on:`,
+    violation.url,
+    '',
+    `Blocked by rule: ${ruleName}`,
+    `Reason: ${violation.reason}`,
+  ];
+
+  if (violation.targetSelector) {
+    lines.push(`Target element: ${violation.targetSelector}`);
+  }
+
+  return lines.join('\n');
 }
 
 /**
  * Handle a user's one-time override of a blocked action.
- *
- * When a user clicks "Allow once" on an alert, this function:
- * 1. Marks the violation's userOverride as true.
- * 2. Temporarily allows the specific action on the specific URL.
- * 3. Logs the override in the session timeline.
- *
- * @param alertId - The ID of the alert being overridden.
- * @param violation - The violation to override.
- * @returns Updated violation with userOverride = true.
- *
- * TODO: Set userOverride = true.
- * Send a message to the content script to allow the blocked action.
- * Create a timeline event logging the user override.
  */
 export function handleOneTimeOverride(
   alertId: string,
   violation: BoundaryViolation
 ): BoundaryViolation {
-  // TODO: Process the one-time override.
-  throw new Error('Not implemented');
+  return { ...violation, userOverride: true };
 }

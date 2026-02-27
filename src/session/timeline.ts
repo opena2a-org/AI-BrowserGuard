@@ -9,18 +9,12 @@ import type { AgentEvent, AgentEventType } from '../types/events';
 import type { AgentCapability } from '../types/agent';
 import type { AgentSession, SessionSummary } from './types';
 
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
 /**
  * Create a new timeline event.
- *
- * @param type - The event type.
- * @param url - The URL where the event occurred.
- * @param description - Human-readable description of the event.
- * @param options - Optional fields (targetSelector, attemptedAction, outcome, ruleId).
- * @returns A fully populated AgentEvent with generated ID and timestamp.
- *
- * TODO: Generate UUID v4 for the event ID.
- * Set timestamp to current ISO 8601 time.
- * Default outcome to "informational" if not provided.
  */
 export function createTimelineEvent(
   type: AgentEventType,
@@ -33,57 +27,85 @@ export function createTimelineEvent(
     ruleId?: string;
   }
 ): AgentEvent {
-  // TODO: Generate UUID, set timestamp, merge options with defaults.
-  throw new Error('Not implemented');
+  return {
+    id: generateId(),
+    type,
+    timestamp: new Date().toISOString(),
+    url,
+    description,
+    outcome: options?.outcome ?? 'informational',
+    targetSelector: options?.targetSelector,
+    attemptedAction: options?.attemptedAction,
+    ruleId: options?.ruleId,
+  };
 }
 
 /**
- * Append an event to a session's timeline.
- * Also updates the session summary statistics.
- *
- * @param session - The session to append to.
- * @param event - The event to append.
- * @returns The updated session with the new event and recalculated summary.
- *
- * TODO: Push event to session.events array.
- * Recalculate summary statistics (totalActions, allowedActions, blockedActions, violations).
- * Update topUrls based on URL frequency.
- * Update durationSeconds based on first and last event timestamps.
+ * Append an event to a session's timeline and recalculate summary.
  */
 export function appendEventToSession(
   session: AgentSession,
   event: AgentEvent
 ): AgentSession {
-  // TODO: Append event, recalculate summary, return updated session.
-  throw new Error('Not implemented');
+  const events = [...session.events, event];
+  const summary = computeSessionSummary(events, session.startedAt);
+  return { ...session, events, summary };
 }
 
 /**
  * Compute summary statistics from a session's event timeline.
- *
- * @param events - The session's event array.
- * @param startedAt - ISO 8601 timestamp when the session started.
- * @returns Computed summary statistics.
- *
- * TODO: Count events by outcome type.
- * Extract unique URLs and rank by frequency.
- * Calculate duration from startedAt to the last event timestamp.
  */
 export function computeSessionSummary(
   events: AgentEvent[],
   startedAt: string
 ): SessionSummary {
-  // TODO: Iterate events, count by outcome, extract URLs, calculate duration.
-  throw new Error('Not implemented');
+  let totalActions = 0;
+  let allowedActions = 0;
+  let blockedActions = 0;
+  let violations = 0;
+  const urlCounts = new Map<string, number>();
+
+  for (const event of events) {
+    if (event.outcome === 'allowed') {
+      totalActions++;
+      allowedActions++;
+    } else if (event.outcome === 'blocked') {
+      totalActions++;
+      blockedActions++;
+    }
+    if (event.type === 'boundary-violation') {
+      violations++;
+    }
+    if (event.url) {
+      urlCounts.set(event.url, (urlCounts.get(event.url) ?? 0) + 1);
+    }
+  }
+
+  const topUrls = [...urlCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([url]) => url);
+
+  let durationSeconds: number | null = null;
+  if (events.length > 0) {
+    const lastEvent = events[events.length - 1];
+    const start = new Date(startedAt).getTime();
+    const end = new Date(lastEvent.timestamp).getTime();
+    durationSeconds = Math.round((end - start) / 1000);
+  }
+
+  return {
+    totalActions,
+    allowedActions,
+    blockedActions,
+    violations,
+    topUrls,
+    durationSeconds,
+  };
 }
 
 /**
  * Filter timeline events by type, URL, or outcome.
- * Used by the popup to display filtered views of session activity.
- *
- * @param events - The full event array to filter.
- * @param filters - Filter criteria. All provided filters are ANDed together.
- * @returns Filtered array of events.
  */
 export function filterTimelineEvents(
   events: AgentEvent[],
@@ -93,19 +115,17 @@ export function filterTimelineEvents(
     outcome?: 'allowed' | 'blocked' | 'informational';
   }
 ): AgentEvent[] {
-  // TODO: Apply each filter criterion. Return events matching all criteria.
-  throw new Error('Not implemented');
+  return events.filter((event) => {
+    if (filters.type !== undefined && event.type !== filters.type) return false;
+    if (filters.url !== undefined && event.url !== filters.url) return false;
+    if (filters.outcome !== undefined && event.outcome !== filters.outcome) return false;
+    return true;
+  });
 }
 
 /**
- * Get the most recent N events from a session.
- * Used for popup display where space is limited.
- *
- * @param events - The full event array.
- * @param count - Maximum number of events to return.
- * @returns The most recent events, newest first.
+ * Get the most recent N events, newest first.
  */
 export function getRecentEvents(events: AgentEvent[], count: number): AgentEvent[] {
-  // TODO: Slice the last `count` events and reverse for newest-first ordering.
-  throw new Error('Not implemented');
+  return events.slice(-count).reverse();
 }

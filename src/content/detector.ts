@@ -3,59 +3,37 @@
  *
  * Orchestrates all detection methods (CDP, WebDriver, automation, behavioral)
  * to determine whether an AI agent is controlling the current page.
- * Runs in the content script context with access to the page DOM.
  */
 
 import type { AgentIdentity, AgentType, DetectionConfidence } from '../types/agent';
 import type { DetectionEvent } from '../types/events';
+import { detectCdpConnection, monitorCdpConnections } from '../detection/cdp-patterns';
 import type { CdpDetectionResult } from '../detection/cdp-patterns';
+import { detectWebDriverFlag, detectNavigatorAnomalies, detectSeleniumMarkers, monitorWebDriverChanges } from '../detection/webdriver';
 import type { WebDriverDetectionResult } from '../detection/webdriver';
+import { detectAllFrameworks } from '../detection/automation';
 import type { FrameworkDetectionResult } from '../detection/automation';
+import { analyzeMouseBehavior, analyzeKeyboardBehavior, analyzeClickPrecision, aggregateBehavioralAnalysis } from '../detection/behavioral';
 import type { BehavioralDetectionResult } from '../detection/behavioral';
 
-/**
- * Combined detection result aggregating all detection methods.
- */
 export interface DetectionVerdictResult {
-  /** Whether any automation was detected. */
   agentDetected: boolean;
-
-  /** The constructed agent identity, if detected. */
   agent: AgentIdentity | null;
-
-  /** Individual results from each detection method. */
   cdpResult: CdpDetectionResult | null;
   webDriverResult: WebDriverDetectionResult | null;
   frameworkResults: FrameworkDetectionResult[];
   behavioralResult: BehavioralDetectionResult | null;
-
-  /** Overall confidence, computed from the strongest individual signal. */
   overallConfidence: DetectionConfidence;
-
-  /** Detection event ready for logging. */
   event: DetectionEvent;
 }
 
-/**
- * Configuration for the detection engine.
- */
 export interface DetectorConfig {
-  /** Whether to run behavioral analysis (more resource-intensive). */
   enableBehavioral: boolean;
-
-  /** Minimum confidence level to report a detection. */
   minimumConfidence: DetectionConfidence;
-
-  /** Interval in ms between periodic re-checks. Default: 5000. */
   recheckIntervalMs: number;
-
-  /** Number of interaction events to collect before behavioral analysis. Default: 20. */
   behavioralSampleSize: number;
 }
 
-/**
- * Default detector configuration.
- */
 export const DEFAULT_DETECTOR_CONFIG: DetectorConfig = {
   enableBehavioral: true,
   minimumConfidence: 'low',
@@ -63,75 +41,315 @@ export const DEFAULT_DETECTOR_CONFIG: DetectorConfig = {
   behavioralSampleSize: 20,
 };
 
+const CONFIDENCE_ORDER: DetectionConfidence[] = ['low', 'medium', 'high', 'confirmed'];
+
+function confidenceRank(c: DetectionConfidence): number {
+  return CONFIDENCE_ORDER.indexOf(c);
+}
+
+function maxConfidence(...confidences: DetectionConfidence[]): DetectionConfidence {
+  return confidences.reduce((best, c) =>
+    confidenceRank(c) > confidenceRank(best) ? c : best
+  , 'low');
+}
+
 /**
  * Run a full detection sweep using all available methods.
- *
- * Execution order:
- * 1. WebDriver flag check (fastest, most reliable).
- * 2. CDP connection check (fast, reliable for CDP-based tools).
- * 3. Framework-specific fingerprinting (medium speed).
- * 4. Behavioral analysis (slow, requires collected events).
- *
- * @param config - Detection configuration.
- * @returns Aggregated detection verdict.
- *
- * TODO: Call each detection module in sequence.
- * Aggregate results into a DetectionVerdictResult.
- * Determine overall confidence from strongest individual signal.
- * If detected, construct an AgentIdentity with a generated UUID.
- * Build a DetectionEvent for logging.
  */
 export function runDetectionSweep(config?: Partial<DetectorConfig>): DetectionVerdictResult {
-  // TODO: Run all detection methods and aggregate into a verdict.
-  throw new Error('Not implemented');
+  const cfg = { ...DEFAULT_DETECTOR_CONFIG, ...config };
+  const methods: import('../types/agent').DetectionMethod[] = [];
+  const signals: Record<string, unknown> = {};
+
+  // 1. WebDriver flag check
+  const webDriverResult = detectWebDriverFlag();
+  if (webDriverResult.detected) {
+    methods.push(webDriverResult.method);
+    Object.assign(signals, webDriverResult.signals);
+  }
+
+  // Also check navigator anomalies
+  const navigatorResult = detectNavigatorAnomalies();
+  if (navigatorResult.detected) {
+    methods.push(navigatorResult.method);
+    Object.assign(signals, navigatorResult.signals);
+  }
+
+  // Check Selenium markers
+  const seleniumResult = detectSeleniumMarkers();
+  if (seleniumResult.detected) {
+    methods.push(seleniumResult.method);
+    Object.assign(signals, seleniumResult.signals);
+  }
+
+  // 2. CDP connection check
+  const cdpResult = detectCdpConnection();
+  if (cdpResult.detected) {
+    methods.push(cdpResult.method);
+    Object.assign(signals, cdpResult.signals);
+  }
+
+  // 3. Framework-specific fingerprinting
+  const frameworkResults = detectAllFrameworks();
+  for (const fr of frameworkResults) {
+    methods.push(fr.method);
+    Object.assign(signals, fr.signals);
+  }
+
+  // 4. Behavioral is skipped in synchronous sweep (needs collected events)
+  const behavioralResult: BehavioralDetectionResult | null = null;
+
+  // Determine if anything was detected
+  const detectedResults = [
+    webDriverResult.detected ? webDriverResult : null,
+    navigatorResult.detected ? navigatorResult : null,
+    seleniumResult.detected ? seleniumResult : null,
+    cdpResult.detected ? cdpResult : null,
+    ...frameworkResults.filter((r) => r.detected),
+  ].filter(Boolean);
+
+  const agentDetected = detectedResults.length > 0;
+
+  // Compute overall confidence
+  let overallConfidence: DetectionConfidence = 'low';
+  if (agentDetected) {
+    const confidences: DetectionConfidence[] = [];
+    if (webDriverResult.detected) confidences.push(webDriverResult.confidence);
+    if (seleniumResult.detected) confidences.push(seleniumResult.confidence);
+    if (cdpResult.detected) confidences.push(cdpResult.confidence);
+    for (const fr of frameworkResults) {
+      if (fr.detected) confidences.push(fr.confidence);
+    }
+    overallConfidence = maxConfidence(...confidences);
+
+    // Multiple signals upgrade confidence
+    if (detectedResults.length >= 3 && confidenceRank(overallConfidence) < confidenceRank('confirmed')) {
+      overallConfidence = 'confirmed';
+    } else if (detectedResults.length >= 2 && confidenceRank(overallConfidence) < confidenceRank('high')) {
+      overallConfidence = 'high';
+    }
+  }
+
+  // Check minimum confidence
+  if (agentDetected && confidenceRank(overallConfidence) < confidenceRank(cfg.minimumConfidence)) {
+    // Below threshold - report as not detected
+    const event: DetectionEvent = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      methods,
+      confidence: overallConfidence,
+      agent: null,
+      url: window.location.href,
+      signals,
+    };
+    return {
+      agentDetected: false,
+      agent: null,
+      cdpResult,
+      webDriverResult,
+      frameworkResults,
+      behavioralResult,
+      overallConfidence,
+      event,
+    };
+  }
+
+  // Classify agent type
+  const agentType = agentDetected
+    ? classifyAgentType(cdpResult, webDriverResult, frameworkResults, behavioralResult)
+    : 'unknown' as AgentType;
+
+  const agent: AgentIdentity | null = agentDetected
+    ? {
+        id: crypto.randomUUID(),
+        type: agentType,
+        detectionMethods: methods,
+        confidence: overallConfidence,
+        detectedAt: new Date().toISOString(),
+        originUrl: window.location.href,
+        observedCapabilities: [],
+        isActive: true,
+      }
+    : null;
+
+  const event: DetectionEvent = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    methods,
+    confidence: overallConfidence,
+    agent,
+    url: window.location.href,
+    signals,
+  };
+
+  return {
+    agentDetected,
+    agent,
+    cdpResult,
+    webDriverResult,
+    frameworkResults,
+    behavioralResult,
+    overallConfidence,
+    event,
+  };
 }
 
 /**
  * Start continuous detection monitoring.
- *
- * Sets up:
- * 1. An initial detection sweep on page load.
- * 2. Periodic re-checks at the configured interval.
- * 3. Event listeners for collecting behavioral data.
- * 4. CDP connection monitors for late-connecting agents.
- * 5. WebDriver flag change monitors.
- *
- * @param config - Detection configuration.
- * @param onDetection - Callback fired when an agent is detected or detection updates.
- * @returns A cleanup function that stops all monitoring.
- *
- * TODO: Run initial sweep.
- * Set up setInterval for periodic re-checks.
- * Attach mousemove, click, keydown, keyup listeners for behavioral collection.
- * Start CDP and WebDriver monitors from their respective modules.
- * Return cleanup function that clears interval and removes all listeners.
  */
 export function startDetectionMonitor(
   config: Partial<DetectorConfig>,
   onDetection: (verdict: DetectionVerdictResult) => void
 ): () => void {
-  // TODO: Initialize all detection monitors and return cleanup function.
-  throw new Error('Not implemented');
+  const cfg = { ...DEFAULT_DETECTOR_CONFIG, ...config };
+  const cleanups: Array<() => void> = [];
+  let lastDetectedAgentId: string | null = null;
+
+  // Behavioral data collection buffers
+  const mouseEvents: Array<{
+    type: string;
+    clientX: number;
+    clientY: number;
+    timestamp: number;
+    isTrusted: boolean;
+  }> = [];
+  const keyEvents: Array<{
+    type: string;
+    key: string;
+    timestamp: number;
+    isTrusted: boolean;
+  }> = [];
+  const clickPrecisionData: Array<{
+    clientX: number;
+    clientY: number;
+    targetRect: { x: number; y: number; width: number; height: number };
+    timestamp: number;
+  }> = [];
+
+  // Initial sweep
+  const initialResult = runDetectionSweep(cfg);
+  if (initialResult.agentDetected) {
+    lastDetectedAgentId = initialResult.agent?.id ?? null;
+    onDetection(initialResult);
+  }
+
+  // Periodic re-checks
+  const intervalId = setInterval(() => {
+    const result = runDetectionSweep(cfg);
+
+    // Behavioral analysis with collected data
+    if (cfg.enableBehavioral && mouseEvents.length >= cfg.behavioralSampleSize) {
+      const mouseResult = analyzeMouseBehavior([...mouseEvents]);
+      const keyResult = keyEvents.length >= cfg.behavioralSampleSize
+        ? analyzeKeyboardBehavior([...keyEvents])
+        : null;
+      const clickResult = clickPrecisionData.length >= 5
+        ? analyzeClickPrecision([...clickPrecisionData])
+        : null;
+
+      const behavioralResult = aggregateBehavioralAnalysis(mouseResult, keyResult, clickResult);
+      result.behavioralResult = behavioralResult;
+
+      if (behavioralResult.detected && !result.agentDetected) {
+        result.agentDetected = true;
+        result.overallConfidence = behavioralResult.confidence;
+        result.event.confidence = behavioralResult.confidence;
+        result.event.methods.push(behavioralResult.method);
+      }
+    }
+
+    if (result.agentDetected) {
+      // Avoid duplicate detections for the same agent
+      if (result.agent?.id !== lastDetectedAgentId || !lastDetectedAgentId) {
+        lastDetectedAgentId = result.agent?.id ?? null;
+        onDetection(result);
+      }
+    }
+  }, cfg.recheckIntervalMs);
+  cleanups.push(() => clearInterval(intervalId));
+
+  // Behavioral event collection
+  if (cfg.enableBehavioral) {
+    const maxBuffer = cfg.behavioralSampleSize * 3;
+
+    const onMouseEvent = (e: MouseEvent) => {
+      mouseEvents.push({
+        type: e.type,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        timestamp: e.timeStamp,
+        isTrusted: e.isTrusted,
+      });
+      if (mouseEvents.length > maxBuffer) mouseEvents.shift();
+    };
+
+    const onKeyEvent = (e: KeyboardEvent) => {
+      keyEvents.push({
+        type: e.type,
+        key: e.key,
+        timestamp: e.timeStamp,
+        isTrusted: e.isTrusted,
+      });
+      if (keyEvents.length > maxBuffer) keyEvents.shift();
+    };
+
+    const onClickForPrecision = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        clickPrecisionData.push({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          targetRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          timestamp: e.timeStamp,
+        });
+        if (clickPrecisionData.length > maxBuffer) clickPrecisionData.shift();
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseEvent, { passive: true, capture: true });
+    document.addEventListener('click', onClickForPrecision, { passive: true, capture: true });
+    document.addEventListener('keydown', onKeyEvent, { passive: true, capture: true });
+    document.addEventListener('keyup', onKeyEvent, { passive: true, capture: true });
+
+    cleanups.push(() => {
+      document.removeEventListener('mousemove', onMouseEvent, { capture: true });
+      document.removeEventListener('click', onClickForPrecision, { capture: true });
+      document.removeEventListener('keydown', onKeyEvent, { capture: true });
+      document.removeEventListener('keyup', onKeyEvent, { capture: true });
+    });
+  }
+
+  // CDP and WebDriver monitors
+  const cdpCleanup = monitorCdpConnections((result) => {
+    if (result.detected) {
+      const verdict = runDetectionSweep(cfg);
+      if (verdict.agentDetected) {
+        onDetection(verdict);
+      }
+    }
+  });
+  cleanups.push(cdpCleanup);
+
+  const wdCleanup = monitorWebDriverChanges((result) => {
+    if (result.detected) {
+      const verdict = runDetectionSweep(cfg);
+      if (verdict.agentDetected) {
+        onDetection(verdict);
+      }
+    }
+  });
+  cleanups.push(wdCleanup);
+
+  return () => {
+    for (const cleanup of cleanups) {
+      try { cleanup(); } catch { /* ignore */ }
+    }
+  };
 }
 
 /**
- * Determine the agent type from individual detection results.
- *
- * Maps specific detection signals to an AgentType:
- * - Playwright bindings -> 'playwright'
- * - Puppeteer bindings -> 'puppeteer'
- * - Selenium markers -> 'selenium'
- * - Computer Use patterns -> 'anthropic-computer-use'
- * - Operator patterns -> 'openai-operator'
- * - Generic CDP -> 'cdp-generic'
- * - Generic WebDriver -> 'webdriver-generic'
- * - Only behavioral -> 'unknown'
- *
- * @param cdpResult - CDP detection result.
- * @param webDriverResult - WebDriver detection result.
- * @param frameworkResults - Framework-specific results.
- * @param behavioralResult - Behavioral analysis result.
- * @returns The most specific agent type that can be determined.
+ * Determine the agent type from detection results.
  */
 export function classifyAgentType(
   cdpResult: CdpDetectionResult | null,
@@ -139,8 +357,30 @@ export function classifyAgentType(
   frameworkResults: FrameworkDetectionResult[],
   behavioralResult: BehavioralDetectionResult | null
 ): AgentType {
-  // TODO: Check framework results first (most specific).
-  // Fall back to CDP/WebDriver generic types.
-  // Default to 'unknown' if only behavioral signals.
-  throw new Error('Not implemented');
+  // Check framework results first (most specific)
+  for (const fr of frameworkResults) {
+    if (fr.detected && fr.frameworkType !== 'unknown') {
+      return fr.frameworkType;
+    }
+  }
+
+  // CDP-based detection
+  if (cdpResult?.detected) {
+    // Check for specific CDP-based frameworks from CDP detail
+    if (cdpResult.detail.includes('Playwright')) return 'playwright';
+    if (cdpResult.detail.includes('Puppeteer')) return 'puppeteer';
+    return 'cdp-generic';
+  }
+
+  // WebDriver-based detection
+  if (webDriverResult?.detected) {
+    return 'webdriver-generic';
+  }
+
+  // Only behavioral
+  if (behavioralResult?.detected) {
+    return 'unknown';
+  }
+
+  return 'unknown';
 }

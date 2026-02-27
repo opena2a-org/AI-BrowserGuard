@@ -1,0 +1,220 @@
+import { describe, it, expect } from 'vitest';
+import {
+  createRuleFromPreset,
+  evaluateRule,
+  evaluateSitePatterns,
+  evaluateActionRestrictions,
+  isTimeBoundExpired,
+  issueToken,
+  revokeToken,
+} from './rules';
+
+describe('createRuleFromPreset', () => {
+  it('creates a readOnly rule with only navigate and read-dom allowed', () => {
+    const rule = createRuleFromPreset('readOnly');
+    expect(rule.preset).toBe('readOnly');
+    expect(rule.isActive).toBe(true);
+    expect(rule.scope.timeBound).toBeNull();
+
+    const allowed = rule.scope.actionRestrictions
+      .filter((r) => r.action === 'allow')
+      .map((r) => r.capability);
+    expect(allowed).toEqual(['navigate', 'read-dom']);
+  });
+
+  it('creates a limited rule with time bound and site patterns', () => {
+    const rule = createRuleFromPreset('limited', {
+      sitePatterns: [{ pattern: '*.example.com', action: 'allow' }],
+      durationMinutes: 15,
+      label: 'Test session',
+    });
+    expect(rule.preset).toBe('limited');
+    expect(rule.scope.timeBound).not.toBeNull();
+    expect(rule.scope.timeBound!.durationMinutes).toBe(15);
+    expect(rule.scope.sitePatterns).toHaveLength(1);
+    expect(rule.label).toBe('Test session');
+
+    const allowed = rule.scope.actionRestrictions
+      .filter((r) => r.action === 'allow')
+      .map((r) => r.capability);
+    expect(allowed).toContain('navigate');
+    expect(allowed).toContain('read-dom');
+    expect(allowed).toContain('click');
+    expect(allowed).toContain('type-text');
+    expect(allowed).not.toContain('submit-form');
+  });
+
+  it('creates a fullAccess rule with all capabilities allowed', () => {
+    const rule = createRuleFromPreset('fullAccess');
+    expect(rule.preset).toBe('fullAccess');
+    expect(rule.scope.timeBound).toBeNull();
+
+    const blocked = rule.scope.actionRestrictions
+      .filter((r) => r.action === 'block');
+    expect(blocked).toHaveLength(0);
+  });
+
+  it('defaults limited duration to 60 minutes when not specified', () => {
+    const rule = createRuleFromPreset('limited');
+    expect(rule.scope.timeBound!.durationMinutes).toBe(60);
+  });
+});
+
+describe('evaluateRule', () => {
+  it('blocks when rule is inactive', () => {
+    const rule = createRuleFromPreset('fullAccess');
+    rule.isActive = false;
+    const result = evaluateRule(rule, 'click', 'https://example.com');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not active');
+  });
+
+  it('allows navigate under readOnly', () => {
+    const rule = createRuleFromPreset('readOnly');
+    const result = evaluateRule(rule, 'navigate', 'https://example.com');
+    expect(result.allowed).toBe(true);
+  });
+
+  it('blocks click under readOnly', () => {
+    const rule = createRuleFromPreset('readOnly');
+    const result = evaluateRule(rule, 'click', 'https://example.com');
+    expect(result.allowed).toBe(false);
+  });
+
+  it('allows all actions under fullAccess', () => {
+    const rule = createRuleFromPreset('fullAccess');
+    expect(evaluateRule(rule, 'click', 'https://example.com').allowed).toBe(true);
+    expect(evaluateRule(rule, 'submit-form', 'https://bank.com').allowed).toBe(true);
+    expect(evaluateRule(rule, 'execute-script', 'https://example.com').allowed).toBe(true);
+  });
+
+  it('blocks expired limited delegation', () => {
+    const rule = createRuleFromPreset('limited', {
+      sitePatterns: [{ pattern: '*.example.com', action: 'allow' }],
+      durationMinutes: 15,
+    });
+    // Set expiry to the past
+    rule.scope.timeBound!.expiresAt = new Date(Date.now() - 1000).toISOString();
+    const result = evaluateRule(rule, 'click', 'https://example.com');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('expired');
+  });
+
+  it('blocks URLs not in allowlist for limited preset', () => {
+    const rule = createRuleFromPreset('limited', {
+      sitePatterns: [{ pattern: '*.example.com', action: 'allow' }],
+      durationMinutes: 60,
+    });
+    const result = evaluateRule(rule, 'click', 'https://other.com/page');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('URL blocked');
+  });
+
+  it('allows URLs in allowlist for limited preset', () => {
+    const rule = createRuleFromPreset('limited', {
+      sitePatterns: [{ pattern: '*.example.com', action: 'allow' }],
+      durationMinutes: 60,
+    });
+    const result = evaluateRule(rule, 'click', 'https://sub.example.com/page');
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('evaluateSitePatterns', () => {
+  it('returns default when no patterns match', () => {
+    const result = evaluateSitePatterns('https://example.com', [], 'allow');
+    expect(result.allowed).toBe(true);
+    expect(result.matchedPattern).toBeNull();
+  });
+
+  it('matches first pattern (first-match-wins)', () => {
+    const patterns = [
+      { pattern: '*.bank.com', action: 'block' as const },
+      { pattern: '*.example.com', action: 'allow' as const },
+    ];
+    const result = evaluateSitePatterns('https://my.bank.com', patterns, 'allow');
+    expect(result.allowed).toBe(false);
+    expect(result.matchedPattern?.pattern).toBe('*.bank.com');
+  });
+
+  it('blocks by default when default is block', () => {
+    const result = evaluateSitePatterns('https://unknown.com', [], 'block');
+    expect(result.allowed).toBe(false);
+  });
+});
+
+describe('evaluateActionRestrictions', () => {
+  it('returns allowed for allowed capabilities', () => {
+    const restrictions = [
+      { capability: 'click' as const, action: 'allow' as const },
+      { capability: 'submit-form' as const, action: 'block' as const },
+    ];
+    expect(evaluateActionRestrictions('click', restrictions).allowed).toBe(true);
+  });
+
+  it('returns blocked for blocked capabilities', () => {
+    const restrictions = [
+      { capability: 'click' as const, action: 'allow' as const },
+      { capability: 'submit-form' as const, action: 'block' as const },
+    ];
+    expect(evaluateActionRestrictions('submit-form', restrictions).allowed).toBe(false);
+  });
+
+  it('blocks unlisted capabilities by default', () => {
+    const restrictions = [
+      { capability: 'click' as const, action: 'allow' as const },
+    ];
+    expect(evaluateActionRestrictions('execute-script', restrictions).allowed).toBe(false);
+  });
+});
+
+describe('isTimeBoundExpired', () => {
+  it('returns false for null (no time limit)', () => {
+    expect(isTimeBoundExpired(null)).toBe(false);
+  });
+
+  it('returns false for future expiry', () => {
+    const timeBound = {
+      durationMinutes: 60,
+      grantedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    };
+    expect(isTimeBoundExpired(timeBound)).toBe(false);
+  });
+
+  it('returns true for past expiry', () => {
+    const timeBound = {
+      durationMinutes: 60,
+      grantedAt: new Date(Date.now() - 7200000).toISOString(),
+      expiresAt: new Date(Date.now() - 3600000).toISOString(),
+    };
+    expect(isTimeBoundExpired(timeBound)).toBe(true);
+  });
+});
+
+describe('issueToken / revokeToken', () => {
+  it('creates a token with correct fields', () => {
+    const scope = {
+      sitePatterns: [],
+      actionRestrictions: [],
+      timeBound: null,
+    };
+    const token = issueToken('rule-1', 'agent-1', scope, '2099-01-01T00:00:00Z');
+    expect(token.ruleId).toBe('rule-1');
+    expect(token.agentId).toBe('agent-1');
+    expect(token.revoked).toBe(false);
+    expect(token.tokenId).toBeTruthy();
+  });
+
+  it('revokes a token', () => {
+    const scope = {
+      sitePatterns: [],
+      actionRestrictions: [],
+      timeBound: null,
+    };
+    const token = issueToken('rule-1', 'agent-1', scope, '2099-01-01T00:00:00Z');
+    const revoked = revokeToken(token);
+    expect(revoked.revoked).toBe(true);
+    expect(token.revoked).toBe(false); // original unchanged
+  });
+});

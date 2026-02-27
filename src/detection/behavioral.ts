@@ -2,106 +2,65 @@
  * Behavioral heuristics for automation detection.
  *
  * Analyzes user interaction patterns to distinguish human input from
- * programmatic automation. This is the last line of defense when
- * frameworks actively evade flag-based detection.
+ * programmatic automation.
  */
 
 import type { DetectionMethod, DetectionConfidence } from '../types/agent';
 
-/**
- * Behavioral analysis result.
- */
 export interface BehavioralDetectionResult {
-  /** Whether automation-like behavior was detected. */
   detected: boolean;
-
-  /** The specific behavioral signal that triggered detection. */
   method: DetectionMethod;
-
-  /** Confidence level. Behavioral analysis is inherently less certain. */
   confidence: DetectionConfidence;
-
-  /** Description of the behavioral anomaly. */
   detail: string;
-
-  /** Raw metric values for logging and tuning. */
   metrics: BehavioralMetrics;
 }
 
-/**
- * Raw behavioral metrics collected from user interaction events.
- * Used to compute detection scores.
- */
 export interface BehavioralMetrics {
-  /** Average time between consecutive mouse events (ms). */
   averageMouseInterval: number;
-
-  /** Standard deviation of mouse event intervals (ms). Low = robotic. */
   mouseIntervalStdDev: number;
-
-  /** Percentage of mouse events with integer-only coordinates (0-1). */
   integerCoordinateRatio: number;
-
-  /** Average time between consecutive keydown events (ms). */
   averageKeyInterval: number;
-
-  /** Standard deviation of key intervals (ms). Low = robotic. */
   keyIntervalStdDev: number;
-
-  /** Whether mouse events have the isTrusted property set to false. */
   syntheticEventRatio: number;
-
-  /** Number of click events without preceding mousemove events. */
   clicksWithoutMovement: number;
-
-  /** Total events analyzed. */
   totalEventsAnalyzed: number;
 }
 
-/**
- * Thresholds for behavioral analysis.
- * These values were derived from research on human vs. automated interaction patterns.
- */
 const BEHAVIORAL_THRESHOLDS = {
-  /** Mouse interval standard deviation below this (ms) suggests automation. */
   mouseIntervalStdDevMin: 15,
-
-  /** If more than this ratio of coordinates are integers, likely automated. */
   integerCoordinateRatioMax: 0.95,
-
-  /** Key interval standard deviation below this (ms) suggests automation. */
   keyIntervalStdDevMin: 20,
-
-  /** If more than this ratio of events are synthetic, definitely automated. */
   syntheticEventRatioMax: 0.5,
-
-  /** Minimum events needed before behavioral analysis is meaningful. */
   minimumEventsRequired: 20,
 } as const;
 
+function computeStdDev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function computeMean(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function emptyMetrics(): BehavioralMetrics {
+  return {
+    averageMouseInterval: 0,
+    mouseIntervalStdDev: 0,
+    integerCoordinateRatio: 0,
+    averageKeyInterval: 0,
+    keyIntervalStdDev: 0,
+    syntheticEventRatio: 0,
+    clicksWithoutMovement: 0,
+    totalEventsAnalyzed: 0,
+  };
+}
+
 /**
  * Analyze mouse movement and click patterns for automation signals.
- *
- * Human mouse movements exhibit:
- * - Variable speed (acceleration/deceleration curves).
- * - Sub-pixel coordinates from high-DPI displays.
- * - Natural jitter and imprecision in targeting.
- * - Movement before clicks (hand approaches target).
- *
- * Automated mouse events typically have:
- * - Constant or zero velocity between events.
- * - Integer-only coordinates.
- * - Perfect precision (exact center of elements).
- * - Clicks without preceding movement (teleporting cursor).
- *
- * @param events - Array of recent MouseEvent data collected by the content script.
- * @returns Behavioral detection result for mouse patterns.
- *
- * TODO: Calculate inter-event timing statistics.
- * Compute coordinate precision metrics (integer ratio, sub-pixel presence).
- * Detect teleporting clicks (click without preceding mousemove to same area).
- * Check for isTrusted=false on events.
- * Compare metrics against BEHAVIORAL_THRESHOLDS.
  */
 export function analyzeMouseBehavior(
   events: Array<{
@@ -112,32 +71,81 @@ export function analyzeMouseBehavior(
     isTrusted: boolean;
   }>
 ): BehavioralDetectionResult {
-  // TODO: Compute mouse behavioral metrics and compare against thresholds.
-  throw new Error('Not implemented');
+  const metrics = emptyMetrics();
+  metrics.totalEventsAnalyzed = events.length;
+
+  if (events.length < BEHAVIORAL_THRESHOLDS.minimumEventsRequired) {
+    return {
+      detected: false,
+      method: 'behavioral-timing',
+      confidence: 'low',
+      detail: `Insufficient mouse events for analysis (${events.length}/${BEHAVIORAL_THRESHOLDS.minimumEventsRequired}).`,
+      metrics,
+    };
+  }
+
+  // Compute inter-event intervals
+  const intervals: number[] = [];
+  for (let i = 1; i < events.length; i++) {
+    intervals.push(events[i].timestamp - events[i - 1].timestamp);
+  }
+  metrics.averageMouseInterval = computeMean(intervals);
+  metrics.mouseIntervalStdDev = computeStdDev(intervals);
+
+  // Compute integer coordinate ratio
+  let integerCount = 0;
+  for (const e of events) {
+    if (e.clientX === Math.floor(e.clientX) && e.clientY === Math.floor(e.clientY)) {
+      integerCount++;
+    }
+  }
+  metrics.integerCoordinateRatio = integerCount / events.length;
+
+  // Count synthetic events
+  const syntheticCount = events.filter((e) => !e.isTrusted).length;
+  metrics.syntheticEventRatio = syntheticCount / events.length;
+
+  // Count clicks without preceding movement
+  let clicksWithoutMovement = 0;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].type === 'click') {
+      const hasPrecedingMove = i > 0 && events[i - 1].type === 'mousemove';
+      if (!hasPrecedingMove) clicksWithoutMovement++;
+    }
+  }
+  metrics.clicksWithoutMovement = clicksWithoutMovement;
+
+  // Evaluate against thresholds
+  const anomalies: string[] = [];
+  if (metrics.mouseIntervalStdDev < BEHAVIORAL_THRESHOLDS.mouseIntervalStdDevMin) {
+    anomalies.push('uniform mouse timing');
+  }
+  if (metrics.integerCoordinateRatio > BEHAVIORAL_THRESHOLDS.integerCoordinateRatioMax) {
+    anomalies.push('integer-only coordinates');
+  }
+  if (metrics.syntheticEventRatio > BEHAVIORAL_THRESHOLDS.syntheticEventRatioMax) {
+    anomalies.push('high synthetic event ratio');
+  }
+
+  const detected = anomalies.length > 0;
+  let confidence: DetectionConfidence = 'low';
+  if (anomalies.length >= 3) confidence = 'high';
+  else if (anomalies.length >= 2) confidence = 'medium';
+  else if (anomalies.length === 1) confidence = 'low';
+
+  return {
+    detected,
+    method: 'behavioral-timing',
+    confidence,
+    detail: detected
+      ? `Mouse behavioral anomalies: ${anomalies.join(', ')}.`
+      : 'Mouse behavior appears human.',
+    metrics,
+  };
 }
 
 /**
  * Analyze keyboard input patterns for automation signals.
- *
- * Human typing exhibits:
- * - Variable inter-key intervals (faster for common sequences, slower for reaching).
- * - Occasional pauses for thinking.
- * - Typos and corrections.
- * - Key-up events with realistic hold durations.
- *
- * Automated typing typically has:
- * - Uniform inter-key intervals.
- * - No pauses or corrections.
- * - Identical hold durations for all keys.
- * - Synthetic keydown/keyup events (isTrusted=false).
- *
- * @param events - Array of recent KeyboardEvent data collected by the content script.
- * @returns Behavioral detection result for keyboard patterns.
- *
- * TODO: Calculate inter-key timing statistics.
- * Detect uniform hold durations.
- * Check for isTrusted=false.
- * Look for unrealistic typing speed (below human minimum ~30ms per character).
  */
 export function analyzeKeyboardBehavior(
   events: Array<{
@@ -147,23 +155,62 @@ export function analyzeKeyboardBehavior(
     isTrusted: boolean;
   }>
 ): BehavioralDetectionResult {
-  // TODO: Compute keyboard behavioral metrics and compare against thresholds.
-  throw new Error('Not implemented');
+  const metrics = emptyMetrics();
+  metrics.totalEventsAnalyzed = events.length;
+
+  if (events.length < BEHAVIORAL_THRESHOLDS.minimumEventsRequired) {
+    return {
+      detected: false,
+      method: 'behavioral-typing',
+      confidence: 'low',
+      detail: `Insufficient keyboard events for analysis (${events.length}/${BEHAVIORAL_THRESHOLDS.minimumEventsRequired}).`,
+      metrics,
+    };
+  }
+
+  // Compute inter-key intervals for keydown events
+  const keydowns = events.filter((e) => e.type === 'keydown');
+  const intervals: number[] = [];
+  for (let i = 1; i < keydowns.length; i++) {
+    intervals.push(keydowns[i].timestamp - keydowns[i - 1].timestamp);
+  }
+  metrics.averageKeyInterval = computeMean(intervals);
+  metrics.keyIntervalStdDev = computeStdDev(intervals);
+
+  // Count synthetic events
+  const syntheticCount = events.filter((e) => !e.isTrusted).length;
+  metrics.syntheticEventRatio = syntheticCount / events.length;
+
+  const anomalies: string[] = [];
+  if (metrics.keyIntervalStdDev < BEHAVIORAL_THRESHOLDS.keyIntervalStdDevMin && keydowns.length > 5) {
+    anomalies.push('uniform key timing');
+  }
+  if (metrics.syntheticEventRatio > BEHAVIORAL_THRESHOLDS.syntheticEventRatioMax) {
+    anomalies.push('high synthetic event ratio');
+  }
+  // Unrealistic speed: average interval < 30ms
+  if (metrics.averageKeyInterval > 0 && metrics.averageKeyInterval < 30 && keydowns.length > 5) {
+    anomalies.push('superhuman typing speed');
+  }
+
+  const detected = anomalies.length > 0;
+  let confidence: DetectionConfidence = 'low';
+  if (anomalies.length >= 2) confidence = 'medium';
+  if (metrics.syntheticEventRatio > 0.8) confidence = 'high';
+
+  return {
+    detected,
+    method: 'behavioral-typing',
+    confidence,
+    detail: detected
+      ? `Keyboard behavioral anomalies: ${anomalies.join(', ')}.`
+      : 'Keyboard behavior appears human.',
+    metrics,
+  };
 }
 
 /**
  * Analyze click targeting precision.
- *
- * Humans click with natural imprecision: slightly off-center, with
- * variable positioning across multiple clicks on the same target.
- * Automated clicks consistently hit the exact center or computed coordinate.
- *
- * @param clicks - Array of click events with their target element bounding rects.
- * @returns Behavioral detection result for click precision.
- *
- * TODO: For each click, compute the offset from the target element's center.
- * Calculate the standard deviation of offsets across all clicks.
- * Low standard deviation (< 2px) with high sample size indicates automation.
  */
 export function analyzeClickPrecision(
   clicks: Array<{
@@ -173,31 +220,103 @@ export function analyzeClickPrecision(
     timestamp: number;
   }>
 ): BehavioralDetectionResult {
-  // TODO: Compute click offset statistics and detect automation precision.
-  throw new Error('Not implemented');
+  const metrics = emptyMetrics();
+  metrics.totalEventsAnalyzed = clicks.length;
+
+  if (clicks.length < 5) {
+    return {
+      detected: false,
+      method: 'behavioral-precision',
+      confidence: 'low',
+      detail: `Insufficient click data for precision analysis (${clicks.length}/5).`,
+      metrics,
+    };
+  }
+
+  // Compute offset from center for each click
+  const offsets: number[] = [];
+  for (const click of clicks) {
+    const centerX = click.targetRect.x + click.targetRect.width / 2;
+    const centerY = click.targetRect.y + click.targetRect.height / 2;
+    const offset = Math.sqrt(
+      (click.clientX - centerX) ** 2 + (click.clientY - centerY) ** 2
+    );
+    offsets.push(offset);
+  }
+
+  const stdDev = computeStdDev(offsets);
+  const meanOffset = computeMean(offsets);
+
+  // Automation: very low offset variation with near-perfect centering
+  const detected = stdDev < 2 && meanOffset < 3;
+  const confidence: DetectionConfidence = detected ? 'medium' : 'low';
+
+  return {
+    detected,
+    method: 'behavioral-precision',
+    confidence,
+    detail: detected
+      ? `Click precision is suspiciously uniform (std dev: ${stdDev.toFixed(1)}px, mean offset: ${meanOffset.toFixed(1)}px).`
+      : `Click precision appears human (std dev: ${stdDev.toFixed(1)}px).`,
+    metrics,
+  };
 }
 
 /**
  * Aggregate all behavioral analysis results into a single verdict.
- *
- * Combines mouse, keyboard, and click precision analysis.
- * Uses a weighted scoring system where multiple weak signals
- * can produce a medium-confidence detection.
- *
- * @param mouseResult - Result from analyzeMouseBehavior.
- * @param keyboardResult - Result from analyzeKeyboardBehavior.
- * @param clickResult - Result from analyzeClickPrecision.
- * @returns Combined behavioral detection result.
- *
- * TODO: Weight each result by its individual confidence.
- * If 2+ results detect automation, upgrade overall confidence.
- * If only 1 result detects automation at low confidence, stay at low.
  */
 export function aggregateBehavioralAnalysis(
   mouseResult: BehavioralDetectionResult | null,
   keyboardResult: BehavioralDetectionResult | null,
   clickResult: BehavioralDetectionResult | null
 ): BehavioralDetectionResult {
-  // TODO: Combine individual results using weighted scoring.
-  throw new Error('Not implemented');
+  const results = [mouseResult, keyboardResult, clickResult].filter(
+    (r): r is BehavioralDetectionResult => r !== null
+  );
+
+  if (results.length === 0) {
+    return {
+      detected: false,
+      method: 'behavioral-timing',
+      confidence: 'low',
+      detail: 'No behavioral data available for analysis.',
+      metrics: emptyMetrics(),
+    };
+  }
+
+  const detectedCount = results.filter((r) => r.detected).length;
+  const detected = detectedCount > 0;
+
+  // Determine overall confidence based on how many signals agree
+  const confidenceOrder: DetectionConfidence[] = ['low', 'medium', 'high', 'confirmed'];
+  let confidence: DetectionConfidence = 'low';
+  if (detectedCount >= 3) {
+    confidence = 'confirmed';
+  } else if (detectedCount >= 2) {
+    confidence = 'high';
+  } else if (detectedCount === 1) {
+    // Use the individual result's confidence
+    const detectedResult = results.find((r) => r.detected);
+    confidence = detectedResult?.confidence ?? 'low';
+  }
+
+  // Merge metrics from the most informative result
+  const bestResult = results.reduce((best, r) => {
+    const bestIdx = confidenceOrder.indexOf(best.confidence);
+    const rIdx = confidenceOrder.indexOf(r.confidence);
+    return rIdx > bestIdx ? r : best;
+  });
+
+  const details = results
+    .filter((r) => r.detected)
+    .map((r) => r.detail)
+    .join(' ');
+
+  return {
+    detected,
+    method: bestResult.method,
+    confidence,
+    detail: detected ? details : 'Behavioral analysis indicates human interaction.',
+    metrics: bestResult.metrics,
+  };
 }

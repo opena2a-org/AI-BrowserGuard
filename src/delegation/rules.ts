@@ -17,39 +17,27 @@ import type {
 } from '../types/delegation';
 import type { AgentCapability } from '../types/agent';
 
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+const READ_ONLY_CAPABILITIES: AgentCapability[] = ['navigate', 'read-dom'];
+const LIMITED_CAPABILITIES: AgentCapability[] = ['navigate', 'read-dom', 'click', 'type-text'];
+const ALL_CAPABILITIES: AgentCapability[] = [
+  'navigate', 'read-dom', 'click', 'type-text', 'submit-form',
+  'download-file', 'open-tab', 'close-tab', 'screenshot',
+  'execute-script', 'modify-dom',
+];
+
+function buildActionRestrictions(allowed: AgentCapability[]): ActionRestriction[] {
+  return ALL_CAPABILITIES.map((cap) => ({
+    capability: cap,
+    action: allowed.includes(cap) ? 'allow' as const : 'block' as const,
+  }));
+}
+
 /**
  * Create a delegation rule from a preset.
- *
- * Preset definitions:
- *
- * readOnly:
- *   - Allowed actions: navigate, read-dom
- *   - Blocked actions: all others
- *   - Site patterns: all allowed (no restrictions)
- *   - Time bound: none (persistent until manually revoked)
- *
- * limited:
- *   - Allowed actions: navigate, read-dom, click, type-text
- *   - Blocked actions: submit-form, download-file, open-tab, close-tab, execute-script, modify-dom
- *   - Site patterns: user-specified allowlist (must be provided)
- *   - Time bound: user-specified (15min, 1hr, or 4hr)
- *
- * fullAccess:
- *   - Allowed actions: all
- *   - Blocked actions: none
- *   - Site patterns: all allowed
- *   - Time bound: none
- *   - Note: all actions are still logged and boundary alerts still fire
- *
- * @param preset - The preset to create a rule from.
- * @param options - Additional configuration for the rule.
- * @returns A fully populated DelegationRule.
- *
- * TODO: Generate UUID for rule ID.
- * Build DelegationScope based on preset.
- * If preset is "limited", require sitePatterns and timeBound in options.
- * Set createdAt to current ISO 8601 timestamp.
- * Set isActive to true.
  */
 export function createRuleFromPreset(
   preset: DelegationPreset,
@@ -59,104 +47,166 @@ export function createRuleFromPreset(
     label?: string;
   }
 ): DelegationRule {
-  // TODO: Build delegation rule based on preset + options.
-  throw new Error('Not implemented');
+  const now = new Date();
+  let scope: DelegationScope;
+
+  switch (preset) {
+    case 'readOnly':
+      scope = {
+        sitePatterns: [],
+        actionRestrictions: buildActionRestrictions(READ_ONLY_CAPABILITIES),
+        timeBound: null,
+      };
+      break;
+
+    case 'limited': {
+      const durationMinutes = options?.durationMinutes ?? 60;
+      const expiresAt = new Date(now.getTime() + durationMinutes * 60000);
+      const timeBound: TimeBound = {
+        durationMinutes,
+        grantedAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+      };
+      scope = {
+        sitePatterns: options?.sitePatterns ?? [],
+        actionRestrictions: buildActionRestrictions(LIMITED_CAPABILITIES),
+        timeBound,
+      };
+      break;
+    }
+
+    case 'fullAccess':
+      scope = {
+        sitePatterns: [],
+        actionRestrictions: buildActionRestrictions(ALL_CAPABILITIES),
+        timeBound: null,
+      };
+      break;
+  }
+
+  return {
+    id: generateId(),
+    preset,
+    scope,
+    createdAt: now.toISOString(),
+    isActive: true,
+    label: options?.label,
+  };
 }
 
 /**
  * Evaluate whether an action is allowed under a delegation rule.
- *
- * Evaluation logic:
- * 1. Check if rule is active. If not, deny.
- * 2. Check time bound. If expired, deny and mark rule as inactive.
- * 3. Check URL against site patterns (first match wins, blocklist takes priority).
- * 4. Check action capability against action restrictions.
- * 5. If all checks pass, allow.
- *
- * @param rule - The delegation rule to evaluate.
- * @param action - The action being attempted.
- * @param url - The URL where the action is being attempted.
- * @returns Whether the action is allowed and the reason.
- *
- * TODO: Implement the evaluation chain described above.
- * Return both the boolean result and a human-readable reason.
  */
 export function evaluateRule(
   rule: DelegationRule,
   action: AgentCapability,
   url: string
 ): { allowed: boolean; reason: string } {
-  // TODO: Evaluate rule against action and URL.
-  throw new Error('Not implemented');
+  if (!rule.isActive) {
+    return { allowed: false, reason: 'Delegation rule is not active.' };
+  }
+
+  if (isTimeBoundExpired(rule.scope.timeBound)) {
+    return { allowed: false, reason: 'Delegation has expired.' };
+  }
+
+  // Check site patterns
+  const defaultSiteAction = rule.preset === 'limited' ? 'block' as const : 'allow' as const;
+  const siteResult = evaluateSitePatterns(url, rule.scope.sitePatterns, defaultSiteAction);
+  if (!siteResult.allowed) {
+    const patternDetail = siteResult.matchedPattern
+      ? ` (matched: ${siteResult.matchedPattern.pattern})`
+      : ' (default policy)';
+    return { allowed: false, reason: `URL blocked by site policy${patternDetail}.` };
+  }
+
+  // Check action restrictions
+  const actionResult = evaluateActionRestrictions(action, rule.scope.actionRestrictions);
+  if (!actionResult.allowed) {
+    return {
+      allowed: false,
+      reason: `Action "${action}" is not permitted under ${rule.preset} delegation.`,
+    };
+  }
+
+  return { allowed: true, reason: 'Action permitted by delegation rules.' };
 }
 
 /**
  * Check if a URL matches any site pattern in the scope.
- *
- * Pattern matching rules:
- * - Patterns are evaluated in order; first match wins.
- * - If a "block" pattern matches first, the URL is blocked.
- * - If an "allow" pattern matches first, the URL is allowed.
- * - If no pattern matches, the default depends on the preset:
- *   - readOnly/fullAccess: default allow (no restrictions).
- *   - limited: default block (allowlist-based).
- *
- * @param url - The URL to check.
- * @param patterns - The site patterns to evaluate.
- * @param defaultAction - What to do if no pattern matches.
- * @returns Whether the URL is allowed and which pattern matched.
+ * First match wins.
  */
 export function evaluateSitePatterns(
   url: string,
   patterns: SitePattern[],
   defaultAction: 'allow' | 'block'
 ): { allowed: boolean; matchedPattern: SitePattern | null } {
-  // TODO: Iterate patterns, match URL, return first match.
-  throw new Error('Not implemented');
+  for (const pattern of patterns) {
+    if (matchGlob(url, pattern.pattern)) {
+      return {
+        allowed: pattern.action === 'allow',
+        matchedPattern: pattern,
+      };
+    }
+  }
+  return { allowed: defaultAction === 'allow', matchedPattern: null };
+}
+
+/**
+ * Match a URL against a glob pattern.
+ */
+function matchGlob(url: string, pattern: string): boolean {
+  try {
+    // If pattern doesn't contain protocol, match against hostname
+    if (!pattern.includes('://')) {
+      const parsedUrl = new URL(url);
+      const hostname = parsedUrl.hostname;
+      // Convert glob to regex: * matches any characters except dots in domain context
+      const regexStr = pattern
+        .replace(/\./g, '\\.')
+        .replace(/\*\*/g, '.*')
+        .replace(/\*/g, '[^.]*');
+      return new RegExp(`^${regexStr}$`).test(hostname);
+    }
+
+    // Full URL pattern matching
+    const regexStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\\\*/g, '.*');
+    return new RegExp(`^${regexStr}$`).test(url);
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Check if an action is allowed by the action restriction list.
- *
- * @param action - The capability to check.
- * @param restrictions - The action restriction list from the delegation scope.
- * @returns Whether the action is allowed.
  */
 export function evaluateActionRestrictions(
   action: AgentCapability,
   restrictions: ActionRestriction[]
 ): { allowed: boolean; matchedRestriction: ActionRestriction | null } {
-  // TODO: Find the restriction matching the action, return its allow/block status.
-  throw new Error('Not implemented');
+  const restriction = restrictions.find((r) => r.capability === action);
+  if (!restriction) {
+    // Default-block if not listed
+    return { allowed: false, matchedRestriction: null };
+  }
+  return {
+    allowed: restriction.action === 'allow',
+    matchedRestriction: restriction,
+  };
 }
 
 /**
  * Check if a time bound has expired.
- *
- * @param timeBound - The time bound to check, or null for no limit.
- * @returns Whether the time bound has expired.
  */
 export function isTimeBoundExpired(timeBound: TimeBound | null): boolean {
-  // TODO: If null, return false (no expiry). Otherwise compare expiresAt to now.
-  throw new Error('Not implemented');
+  if (timeBound === null) return false;
+  return new Date().getTime() > new Date(timeBound.expiresAt).getTime();
 }
 
 /**
- * Issue a delegation token for an agent session.
- *
- * Tokens encode the delegation scope and can be revoked independently.
- * In the free tier, tokens are local-only (not cryptographically signed).
- *
- * @param ruleId - The delegation rule this token is issued under.
- * @param agentId - The agent this token is issued to.
- * @param scope - The delegation scope.
- * @param expiresAt - When the token expires (ISO 8601).
- * @returns A new delegation token.
- *
- * TODO: Generate UUID for tokenId.
- * Set issuedAt to current time.
- * Copy scope from rule.
- * Leave signature and issuer undefined (free tier).
+ * Issue a delegation token for an agent session (local-only, unsigned in free tier).
  */
 export function issueToken(
   ruleId: string,
@@ -164,17 +214,20 @@ export function issueToken(
   scope: DelegationScope,
   expiresAt: string
 ): DelegationToken {
-  // TODO: Create and return a delegation token.
-  throw new Error('Not implemented');
+  return {
+    tokenId: generateId(),
+    ruleId,
+    agentId,
+    scope,
+    issuedAt: new Date().toISOString(),
+    expiresAt,
+    revoked: false,
+  };
 }
 
 /**
  * Revoke a delegation token.
- *
- * @param token - The token to revoke.
- * @returns The revoked token with revoked=true.
  */
 export function revokeToken(token: DelegationToken): DelegationToken {
-  // TODO: Set token.revoked = true and return.
-  throw new Error('Not implemented');
+  return { ...token, revoked: true };
 }
