@@ -9,9 +9,9 @@ Detect, monitor, and control AI agents operating in your browser.
 
 ## Screenshots
 
-| Detection | Delegation Wizard | Violations | Kill Switch |
-|:---------:|:-----------------:|:----------:|:-----------:|
-| ![Detection](docs/screenshots/1-detection.png) | ![Delegation](docs/screenshots/2-delegation-wizard.png) | ![Violations](docs/screenshots/3-violations.png) | ![Kill Switch](docs/screenshots/4-killswitch.png) |
+| Detection | Delegation Wizard | Read-Only Config | Kill Switch |
+|:---------:|:-----------------:|:----------------:|:-----------:|
+| ![Detection](docs/screenshots/1-detection.png) | ![Delegation](docs/screenshots/2-delegation.png) | ![Read-Only](docs/screenshots/3-readOnly.png) | ![Kill Switch](docs/screenshots/4-killswitch.png) |
 
 ## Why This Exists
 
