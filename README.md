@@ -1,3 +1,5 @@
+> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [Secretless](https://github.com/opena2a-org/secretless-ai) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [ABG](https://github.com/opena2a-org/AI-BrowserGuard) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [OASB](https://github.com/opena2a-org/oasb) · [ARP](https://github.com/opena2a-org/arp) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
 # AI Browser Guard
 
 [![Build](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml)
@@ -5,31 +7,23 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/)
 
-Detect, monitor, and control AI agents operating in your browser.
+**See it. Control it. Kill it.**
 
-## Screenshots
+Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
+
+[Website](https://opena2a.org/aibrowserguard) | [OpenA2A](https://opena2a.org) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
 
 | Detection | Delegation Wizard | Read-Only Config | Kill Switch |
 |:---------:|:-----------------:|:----------------:|:-----------:|
 | ![Detection](docs/screenshots/1-detection.png) | ![Delegation](docs/screenshots/2-delegation.png) | ![Read-Only](docs/screenshots/3-readOnly.png) | ![Kill Switch](docs/screenshots/4-killswitch.png) |
 
-## Why This Exists
-
-Browser-based AI agents (Playwright, Puppeteer, Selenium, Anthropic Computer Use, OpenAI Operator) can take control of your browser session without notice. There is currently no built-in mechanism in Chrome to detect their presence, limit their actions, or terminate them. AI Browser Guard fills that gap by giving users visibility into what agents are doing and control over what they are allowed to do.
-
-## Features
-
-- **Agent Takeover Detection** -- Identifies automation frameworks through WebDriver flags, CDP connection markers, behavioral analysis (timing, click precision, typing patterns), and framework-specific fingerprinting. Works without requiring the agent to identify itself.
-- **Emergency Kill Switch** -- One-click termination of all agent connections. Revokes delegated permissions, clears automation flags, and terminates CDP sessions. Available via popup or keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K).
-- **Delegation Wizard** -- Define agent access boundaries before granting control. Three presets: Read-Only (navigate and read only), Limited (specific sites, time-bounded), and Full Access (unrestricted with logging). Supports site allowlists/blocklists with glob patterns.
-- **Boundary Violation Alerts** -- Fail-closed rule evaluation blocks unauthorized actions before they execute. Each violation generates a Chrome notification with details and a one-time override option.
-- **Session Timeline** -- Chronological log of all agent actions per session. Records action type, target URL, target element, and outcome (allowed/blocked). Retains the last 5 sessions.
+---
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/opena2a-org/AI-BrowserGuard.git
-cd aibrowserguard
+cd AI-BrowserGuard
 npm install
 npm run build
 ```
@@ -40,6 +34,52 @@ Then load in Chrome:
 2. Enable **Developer mode** (toggle in the top-right corner)
 3. Click **Load unpacked** and select the `dist/` directory
 4. The AI Browser Guard icon appears in the Chrome toolbar
+
+---
+
+## Table of Contents
+
+- [Why This Exists](#why-this-exists)
+- [Features](#features)
+- [Detected Frameworks](#detected-frameworks)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Project Structure](#project-structure)
+- [Privacy](#privacy)
+- [Permissions](#permissions)
+- [Contributing](#contributing)
+
+---
+
+## Why This Exists
+
+Browser-based AI agents (Playwright, Puppeteer, Selenium, Anthropic Computer Use, OpenAI Operator) can take control of your browser session without notice. There is currently no built-in mechanism in Chrome to detect their presence, limit their actions, or terminate them. AI Browser Guard fills that gap by giving users visibility into what agents are doing and control over what they are allowed to do.
+
+---
+
+## Features
+
+- **Agent Takeover Detection** -- Identifies automation frameworks through WebDriver flags, CDP connection markers, behavioral analysis (timing, click precision, typing patterns), and framework-specific fingerprinting. Works without requiring the agent to identify itself.
+- **Emergency Kill Switch** -- One-click termination of all agent connections. Revokes delegated permissions, clears automation flags, and terminates CDP sessions. Available via popup or keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K).
+- **Delegation Wizard** -- Define agent access boundaries before granting control. Three presets: Read-Only (navigate and read only), Limited (specific sites, time-bounded), and Full Access (unrestricted with logging). Supports site allowlists/blocklists with glob patterns.
+- **Boundary Violation Alerts** -- Fail-closed rule evaluation blocks unauthorized actions before they execute. Each violation generates a Chrome notification with details and a one-time override option.
+- **Session Timeline** -- Chronological log of all agent actions per session. Records action type, target URL, target element, and outcome (allowed/blocked). Retains the last 5 sessions.
+
+---
+
+## Detected Frameworks
+
+| Framework | Detection Method |
+|-----------|-----------------|
+| Playwright | CDP connection markers, framework-specific page.goto patterns |
+| Puppeteer | CDP protocol commands, browser.newPage signatures |
+| Selenium | `navigator.webdriver` flag, WebDriver protocol markers |
+| Anthropic Computer Use | Screenshot-then-click behavioral patterns, coordinate precision |
+| OpenAI Operator | Operator-specific DOM interaction signatures |
+| Generic CDP | Chrome DevTools Protocol connection without framework fingerprint |
+| Generic WebDriver | WebDriver flag set without framework fingerprint |
+
+---
 
 ## Architecture
 
@@ -61,6 +101,10 @@ Content Script (per tab)          Background Service Worker          Popup UI
 
 **Storage:** All data is persisted in `chrome.storage.local` with a defined schema (`StorageSchema`): sessions, delegation rules, user settings, and detection logs.
 
+See [docs/architecture.md](docs/architecture.md) for detailed diagrams and [docs/adr/](docs/adr/) for architectural decision records.
+
+---
+
 ## Development
 
 ```bash
@@ -73,6 +117,8 @@ npm run lint         # TypeScript strict type checking
 ```
 
 The build system uses Vite with separate entry points for each extension component. Content scripts are bundled as IIFE (no module imports allowed in content scripts), the background service worker uses ES modules, and the popup is a standard HTML entry.
+
+---
 
 ## Project Structure
 
@@ -90,6 +136,8 @@ src/
   __tests__/        Test setup and Chrome API mocks
 docs/
   screenshots/      Extension screenshots
+  architecture.md   Architecture diagrams (Mermaid)
+  adr/              Architectural decision records
   privacy-policy.html
   store-listing.md
 scripts/
@@ -110,23 +158,15 @@ vitest.config.ts    Test configuration
 | `AgentSession` | `src/session/types.ts` | Complete session with events and summary statistics |
 | `StorageSchema` | `src/session/types.ts` | Top-level chrome.storage.local data shape |
 
-## Detected Frameworks
-
-| Framework | Detection Method |
-|-----------|-----------------|
-| Playwright | CDP connection markers, framework-specific page.goto patterns |
-| Puppeteer | CDP protocol commands, browser.newPage signatures |
-| Selenium | `navigator.webdriver` flag, WebDriver protocol markers |
-| Anthropic Computer Use | Screenshot-then-click behavioral patterns, coordinate precision |
-| OpenAI Operator | Operator-specific DOM interaction signatures |
-| Generic CDP | Chrome DevTools Protocol connection without framework fingerprint |
-| Generic WebDriver | WebDriver flag set without framework fingerprint |
+---
 
 ## Privacy
 
 AI Browser Guard makes zero external network requests. All detection, delegation, and session tracking runs locally in the browser. No data leaves the extension. No analytics, no telemetry, no remote APIs.
 
-The full privacy policy is available at [`docs/privacy-policy.html`](docs/privacy-policy.html).
+The full privacy policy is available at [opena2a.org/aibrowserguard/privacy](https://opena2a.org/aibrowserguard/privacy).
+
+---
 
 ## Permissions
 
@@ -140,6 +180,8 @@ The full privacy policy is available at [`docs/privacy-policy.html`](docs/privac
 | `notifications` | Boundary violation alerts |
 | `<all_urls>` | Detect agents on any page the user visits |
 
+---
+
 ## Tech Stack
 
 - **Language:** TypeScript (strict mode, ES2022 target)
@@ -148,6 +190,8 @@ The full privacy policy is available at [`docs/privacy-policy.html`](docs/privac
 - **Extension:** Chrome Manifest V3
 - **UI:** Vanilla TypeScript and CSS (no frameworks, minimal bundle)
 - **Runtime dependencies:** None (pure Chrome APIs)
+
+---
 
 ## Contributing
 
@@ -160,6 +204,22 @@ Contributions are welcome. Please open an issue to discuss proposed changes befo
 
 All pull requests require passing CI checks and code review.
 
+---
+
 ## License
 
 [Apache-2.0](LICENSE) -- Copyright 2026 OpenA2A
+
+---
+
+## OpenA2A Ecosystem
+
+| Project | Description | Install |
+|---------|-------------|---------|
+| [**Secretless AI**](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools -- Claude Code, Cursor, Windsurf | `npx secretless-ai init` |
+| [**HackMyAgent**](https://github.com/opena2a-org/hackmyagent) | Security scanner -- 147 checks, attack mode, auto-fix | `npx hackmyagent secure` |
+| [**AI Browser Guard**](https://github.com/opena2a-org/AI-BrowserGuard) | Detect, control, and terminate AI agents in your browser | Chrome Web Store |
+| [**AIM**](https://github.com/opena2a-org/agent-identity-management) | Identity & access management for AI agents | `pip install aim-sdk` |
+| [**OASB**](https://github.com/opena2a-org/oasb) | Open Agent Security Benchmark -- 182 attack scenarios | `npm install @opena2a/oasb` |
+| [**ARP**](https://github.com/opena2a-org/arp) | Agent Runtime Protection -- process, network, filesystem monitoring | `npm install @opena2a/arp` |
+| [**DVAA**](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Damn Vulnerable AI Agent -- security training and red-teaming | `docker pull opena2a/dvaa` |
