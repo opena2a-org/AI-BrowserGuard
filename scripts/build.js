@@ -42,4 +42,9 @@ for (const icon of ['icon16.png', 'icon48.png', 'icon128.png']) {
   copyFileSync(resolve(root, 'icons', icon), resolve(iconsDir, icon));
 }
 
+// Copy fonts
+const fontsDir = resolve(root, 'dist', 'fonts');
+mkdirSync(fontsDir, { recursive: true });
+copyFileSync(resolve(root, 'fonts', 'inter-latin.woff2'), resolve(fontsDir, 'inter-latin.woff2'));
+
 console.log('\nBuild complete. Load dist/ in chrome://extensions');
