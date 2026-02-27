@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Browser Guard - Privacy Policy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      color: #111827;
+      line-height: 1.7;
+      background: #ffffff;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    h2 { font-size: 20px; margin-top: 32px; margin-bottom: 12px; color: #1f2937; }
+    p, li { font-size: 15px; color: #374151; }
+    ul { padding-left: 24px; }
+    li { margin-bottom: 6px; }
+    .last-updated { font-size: 13px; color: #6b7280; margin-bottom: 32px; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .highlight { background: #f0f9ff; border-left: 3px solid #2563eb; padding: 12px 16px; border-radius: 4px; margin: 16px 0; }
+    .highlight p { margin: 0; }
+    footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 13px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <h1>AI Browser Guard - Privacy Policy</h1>
+  <p class="last-updated">Last updated: February 27, 2026</p>
+
+  <div class="highlight">
+    <p><strong>Summary:</strong> AI Browser Guard processes all data locally on your device. No data is collected, transmitted, or shared with any external server, third party, or analytics service.</p>
+  </div>
+
+  <h2>1. What This Extension Does</h2>
+  <p>AI Browser Guard is a Chrome extension that detects, monitors, and controls AI agents operating in your browser sessions. It provides:</p>
+  <ul>
+    <li>Detection of automated browser control (WebDriver flags, CDP connections, behavioral analysis)</li>
+    <li>An emergency kill switch to terminate agent access</li>
+    <li>A delegation wizard to define access boundaries for AI agents</li>
+    <li>Boundary violation alerts when agents attempt unauthorized actions</li>
+    <li>A session timeline logging agent activity</li>
+  </ul>
+
+  <h2>2. Data We Collect</h2>
+  <p><strong>We do not collect any personal data.</strong></p>
+  <p>The extension processes the following information entirely on your local device:</p>
+  <ul>
+    <li><strong>Detection signals:</strong> Browser automation indicators such as <code>navigator.webdriver</code> flags, CDP markers, and event timing patterns. These are analyzed locally and never transmitted.</li>
+    <li><strong>Session logs:</strong> A chronological record of detected agent actions (timestamps, action types, target URLs, CSS selectors, and outcomes). The last 5 sessions are stored locally.</li>
+    <li><strong>Delegation rules:</strong> Access control rules you configure (presets, site patterns, time bounds). Stored locally in <code>chrome.storage.local</code>.</li>
+    <li><strong>Violation records:</strong> Logs of boundary violations (what was attempted, which rule blocked it). Stored locally, limited to the 100 most recent entries.</li>
+  </ul>
+
+  <h2>3. How Data Is Stored</h2>
+  <p>All data is stored in <code>chrome.storage.local</code>, which is a browser-provided storage mechanism that keeps data on your device only. Data is not synced across devices.</p>
+  <ul>
+    <li>Session history: Last 5 sessions retained</li>
+    <li>Detection log: Last 100 entries retained</li>
+    <li>Delegation rules: Retained until you change or remove them</li>
+    <li>User settings: Retained until you change them or uninstall the extension</li>
+  </ul>
+  <p>Uninstalling the extension deletes all stored data.</p>
+
+  <h2>4. Data We Do NOT Collect</h2>
+  <ul>
+    <li>No personal information (name, email, account credentials)</li>
+    <li>No browsing history beyond what is logged in the session timeline</li>
+    <li>No page content, form data, or user input</li>
+    <li>No cookies, authentication tokens, or session identifiers</li>
+    <li>No analytics, telemetry, or usage statistics</li>
+    <li>No crash reports or error telemetry</li>
+  </ul>
+
+  <h2>5. Network Communication</h2>
+  <p><strong>This extension makes zero network requests.</strong> All detection, analysis, and enforcement happens locally in your browser. There are no external API calls, no update checks beyond Chrome's built-in extension update mechanism, and no data transmission of any kind.</p>
+
+  <h2>6. Permissions Explained</h2>
+  <p>The extension requests the following Chrome permissions:</p>
+  <ul>
+    <li><strong>activeTab:</strong> Access the currently active tab to detect automation and enforce delegation rules.</li>
+    <li><strong>storage:</strong> Store session logs, delegation rules, and settings locally on your device.</li>
+    <li><strong>alarms:</strong> Schedule periodic checks for delegation rule expiration.</li>
+    <li><strong>scripting:</strong> Inject content scripts that detect automation frameworks and enforce boundaries.</li>
+    <li><strong>tabs:</strong> Monitor tab navigation to detect agent activity across tabs and broadcast kill switch commands.</li>
+    <li><strong>notifications:</strong> Display boundary violation alerts when an agent attempts unauthorized actions.</li>
+    <li><strong>host_permissions (&lt;all_urls&gt;):</strong> The content script must run on all pages to detect automation frameworks, since AI agents can operate on any website. Detection cannot be limited to specific domains without losing coverage.</li>
+  </ul>
+
+  <h2>7. Third-Party Services</h2>
+  <p>This extension does not use, integrate with, or transmit data to any third-party services, APIs, analytics platforms, or advertising networks.</p>
+
+  <h2>8. Children's Privacy</h2>
+  <p>This extension does not knowingly collect any information from anyone, including children under 13. Since no personal data is collected, COPPA considerations do not apply.</p>
+
+  <h2>9. Changes to This Policy</h2>
+  <p>If this privacy policy changes, the updated version will be published at this URL with a new "Last updated" date. Material changes affecting data collection would require a new extension version review by the Chrome Web Store.</p>
+
+  <h2>10. Contact</h2>
+  <p>For questions about this privacy policy or the extension, contact:</p>
+  <ul>
+    <li>GitHub: <a href="https://github.com/opena2a-org/aibrowserguard/issues">github.com/opena2a-org/aibrowserguard/issues</a></li>
+    <li>Organization: <a href="https://opena2a.org">OpenA2A</a></li>
+  </ul>
+
+  <footer>
+    AI Browser Guard is part of the <a href="https://opena2a.org">OpenA2A</a> open security platform.
+  </footer>
+</body>
+</html>
