@@ -11,7 +11,7 @@
 
 Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
 
-[Website](https://opena2a.org/aibrowserguard) | [OpenA2A](https://opena2a.org) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
+[Website](https://opena2a.org/aibrowserguard) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
 
 | Detection | Delegation Wizard | Read-Only Config | Kill Switch |
 |:---------:|:-----------------:|:----------------:|:-----------:|
