@@ -1,7 +1,7 @@
 # AI Browser Guard
 
-[![Build](https://github.com/opena2a-org/aibrowserguard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/aibrowserguard/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/opena2a-org/aibrowserguard)
+[![Build](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/)
 
@@ -28,7 +28,7 @@ Browser-based AI agents (Playwright, Puppeteer, Selenium, Anthropic Computer Use
 ## Quick Start
 
 ```bash
-git clone https://github.com/opena2a-org/aibrowserguard.git
+git clone https://github.com/opena2a-org/AI-BrowserGuard.git
 cd aibrowserguard
 npm install
 npm run build
