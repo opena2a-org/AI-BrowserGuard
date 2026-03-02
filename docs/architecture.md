@@ -49,7 +49,6 @@ Declared in `manifest.json`:
 | `activeTab` | Access to the currently active tab for detection |
 | `storage` | Persist sessions, rules, settings to `chrome.storage.local` |
 | `alarms` | Periodic delegation expiration checks (every 1 minute) |
-| `scripting` | Programmatic script injection if needed |
 | `tabs` | Query all tabs to broadcast kill switch / delegation updates |
 | `notifications` | Chrome system notifications for boundary violations and kill switch |
 | `<all_urls>` (host) | Content script injection on every page for agent detection |
@@ -281,7 +280,7 @@ if (!rule) {
 
 ### Delegation Token
 
-`DelegationToken` (created by `issueToken()` in `src/delegation/rules.ts`) is a local-only, unsigned structure in the free tier. It includes reserved fields for future AIM integration:
+`DelegationToken` (created by `issueToken()` in `src/delegation/rules.ts`) is a local-only, unsigned structure. It includes reserved fields for future AIM integration:
 
 - `signature?: string` -- reserved for cryptographic signing
 - `issuer?: string` -- reserved for AIM instance identifier
@@ -508,7 +507,7 @@ The delegation engine's default posture is deny-all:
 
 ### No External Network Calls
 
-The free tier makes zero outbound network requests. All detection, evaluation, and storage happens locally using Chrome APIs. The `manifest.json` does not declare any network-related permissions beyond `<all_urls>` host permissions (which are used solely for content script injection, not for `fetch` or `XMLHttpRequest`).
+AI Browser Guard makes zero outbound network requests. All detection, evaluation, and storage happens locally using Chrome APIs. The `manifest.json` does not declare any network-related permissions beyond `<all_urls>` host permissions (which are used solely for content script injection, not for `fetch` or `XMLHttpRequest`).
 
 ### Content Security Policy Compliance
 

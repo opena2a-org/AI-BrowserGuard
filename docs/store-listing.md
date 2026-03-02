@@ -99,9 +99,6 @@ Required to persist session logs, delegation rules, and user settings locally on
 ### alarms
 Required to schedule periodic checks for delegation rule expiration and detection sweeps.
 
-### scripting
-Required to inject content scripts that detect automation patterns and enforce access boundaries.
-
 ### tabs
 Required to detect agent activity across tabs, broadcast kill switch commands to all tabs, and track navigation for the session timeline.
 

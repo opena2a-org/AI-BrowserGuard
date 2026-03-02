@@ -15,8 +15,8 @@ Users installing a security extension expect it to protect them, not to
 report their browsing behavior to a remote server. Extensions that phone
 home erode user trust and face scrutiny during Chrome Web Store review.
 
-The free tier of AI Browser Guard has no server-side component. There is
-no account system, no subscription validation, and no cloud features.
+AI Browser Guard has no server-side component. There is no account
+system, no subscription validation, and no cloud features.
 
 ## Decision
 
@@ -53,8 +53,8 @@ extension and not accessible to web pages or other extensions.
 
 ### Negative
 - No visibility into crash rates, feature adoption, or user friction
-  points. Product decisions for the free tier must rely on Chrome Web Store
-  reviews, GitHub issues, and manual testing.
+  points. Product decisions must rely on Chrome Web Store reviews, GitHub
+  issues, and manual testing.
 - Cannot push configuration updates (e.g., new framework detection
   signatures) without shipping a full extension update through the
   Chrome Web Store.

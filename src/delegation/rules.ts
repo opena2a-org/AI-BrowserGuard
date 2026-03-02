@@ -206,7 +206,7 @@ export function isTimeBoundExpired(timeBound: TimeBound | null): boolean {
 }
 
 /**
- * Issue a delegation token for an agent session (local-only, unsigned in free tier).
+ * Issue a delegation token for an agent session (local-only, local-only, unsigned).
  */
 export function issueToken(
   ruleId: string,

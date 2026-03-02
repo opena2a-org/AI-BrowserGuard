@@ -98,7 +98,7 @@ export interface DelegationRule {
 
 /**
  * A delegation token that could be verified against AIM in future versions.
- * In the free tier, this is generated locally and not cryptographically signed.
+ * Currently generated locally and not cryptographically signed.
  * The structure is designed to be extensible for AIM integration.
  */
 export interface DelegationToken {
@@ -125,13 +125,13 @@ export interface DelegationToken {
 
   /**
    * Reserved for AIM integration: cryptographic signature of the token.
-   * Not populated in free tier.
+   * Not currently populated.
    */
   signature?: string;
 
   /**
    * Reserved for AIM integration: the AIM instance that issued this token.
-   * Not populated in free tier.
+   * Not currently populated.
    */
   issuer?: string;
 }
