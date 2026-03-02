@@ -117,6 +117,229 @@
   .slide-delegation .badge { background: rgba(34,197,94,0.15); color: #22c55e; border-color: rgba(34,197,94,0.3); }
   .slide-readonly .badge { background: rgba(6,182,212,0.15); color: #06b6d4; border-color: rgba(6,182,212,0.3); }
   .slide-killswitch .badge { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+
+  /* ===== Small Promo Tile: 440x280 ===== */
+  .promo-small {
+    width: 440px;
+    height: 280px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+    display: flex;
+    align-items: center;
+    padding: 0 36px;
+    gap: 28px;
+  }
+
+  .promo-small::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -80px;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 70%);
+  }
+
+  .promo-small .promo-text {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+  }
+
+  .promo-small .promo-title {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #f1f5f9;
+    margin-bottom: 10px;
+  }
+
+  .promo-small .promo-subtitle {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #94a3b8;
+  }
+
+  .promo-small .promo-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    background: rgba(6,182,212,0.15);
+    color: #06b6d4;
+    border: 1px solid rgba(6,182,212,0.3);
+  }
+
+  .promo-small .promo-screenshots {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 8px;
+  }
+
+  .promo-small .promo-screenshots img {
+    height: 220px;
+    width: auto;
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  .promo-small .promo-screenshots img:nth-child(2) {
+    opacity: 0.5;
+    transform: scale(0.92);
+  }
+
+  .promo-small .promo-brand {
+    position: absolute;
+    bottom: 10px;
+    right: 16px;
+    z-index: 2;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  /* ===== Marquee Promo Tile: 1400x560 ===== */
+  .promo-marquee {
+    width: 1400px;
+    height: 560px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
+    display: flex;
+    align-items: center;
+    padding: 0 80px;
+    gap: 60px;
+  }
+
+  .promo-marquee::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    right: -100px;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(6,182,212,0.08) 0%, transparent 70%);
+  }
+
+  .promo-marquee::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -100px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+  }
+
+  .promo-marquee .promo-text {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+  }
+
+  .promo-marquee .promo-badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    background: rgba(6,182,212,0.15);
+    color: #06b6d4;
+    border: 1px solid rgba(6,182,212,0.3);
+  }
+
+  .promo-marquee .promo-title {
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1.15;
+    color: #f1f5f9;
+    margin-bottom: 16px;
+  }
+
+  .promo-marquee .promo-subtitle {
+    font-size: 17px;
+    line-height: 1.6;
+    color: #94a3b8;
+    max-width: 440px;
+  }
+
+  .promo-marquee .promo-features {
+    display: flex;
+    gap: 24px;
+    margin-top: 28px;
+  }
+
+  .promo-marquee .promo-feature-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .promo-marquee .feature-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #06b6d4;
+    flex-shrink: 0;
+  }
+
+  .promo-marquee .promo-screenshots {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .promo-marquee .promo-screenshots img {
+    height: 440px;
+    width: auto;
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+  }
+
+  .promo-marquee .promo-screenshots img:nth-child(2) {
+    height: 400px;
+    opacity: 0.6;
+  }
+
+  .promo-marquee .promo-screenshots img:nth-child(3) {
+    height: 360px;
+    opacity: 0.35;
+  }
+
+  .promo-marquee .promo-brand {
+    position: absolute;
+    bottom: 20px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    z-index: 2;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .promo-marquee .promo-brand span {
+    color: #64748b;
+  }
 </style>
 </head>
 <body>
@@ -179,6 +402,41 @@
     </div>
   </div>
   <div class="branding">AI Browser Guard <span>|</span> OpenA2A</div>
+</div>
+
+<!-- Small Promo Tile: 440x280 -->
+<div class="promo-small" id="promo-small">
+  <div class="promo-text">
+    <div class="promo-badge">Browser Security</div>
+    <div class="promo-title">AI Browser<br>Guard</div>
+    <div class="promo-subtitle">Detect, monitor, and control AI agents operating in your browser.</div>
+  </div>
+  <div class="promo-screenshots">
+    <img src="1-detection.png" alt="Detection">
+    <img src="3-readOnly.png" alt="Capabilities">
+  </div>
+  <div class="promo-brand">OpenA2A</div>
+</div>
+
+<!-- Marquee Promo Tile: 1400x560 -->
+<div class="promo-marquee" id="promo-marquee">
+  <div class="promo-text">
+    <div class="promo-badge">Open Source Browser Security</div>
+    <div class="promo-title">Detect and Control<br>AI Agents in<br>Your Browser</div>
+    <div class="promo-subtitle">Real-time detection of Playwright, Puppeteer, Selenium, and other automation frameworks. Set access boundaries, monitor capabilities, and kill rogue agents instantly.</div>
+    <div class="promo-features">
+      <div class="promo-feature-item"><div class="feature-dot"></div>Agent Detection</div>
+      <div class="promo-feature-item"><div class="feature-dot"></div>Access Delegation</div>
+      <div class="promo-feature-item"><div class="feature-dot"></div>Kill Switch</div>
+      <div class="promo-feature-item"><div class="feature-dot"></div>Session Timeline</div>
+    </div>
+  </div>
+  <div class="promo-screenshots">
+    <img src="1-detection.png" alt="Detection">
+    <img src="3-readOnly.png" alt="Capabilities">
+    <img src="4-killswitch.png" alt="Kill Switch">
+  </div>
+  <div class="promo-brand">AI Browser Guard <span>|</span> OpenA2A</div>
 </div>
 
 </body>

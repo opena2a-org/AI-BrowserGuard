@@ -9,6 +9,8 @@ const slides = [
   { id: 'slide-2', output: 'store-2-delegation.png' },
   { id: 'slide-3', output: 'store-3-readOnly.png' },
   { id: 'slide-4', output: 'store-4-killswitch.png' },
+  { id: 'promo-small', output: 'promo-small-440x280.png' },
+  { id: 'promo-marquee', output: 'promo-marquee-1400x560.png' },
 ];
 
 async function main() {
@@ -35,7 +37,7 @@ async function main() {
   }
 
   await browser.close();
-  console.log('Done. Verify with: sips -g pixelWidth -g pixelHeight -g hasAlpha store-*.png');
+  console.log('Done. Verify with: sips -g pixelWidth -g pixelHeight -g hasAlpha store-*.png promo-*.png');
 }
 
 main().catch(console.error);
