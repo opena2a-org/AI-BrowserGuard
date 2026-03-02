@@ -90,7 +90,7 @@ export interface AgentIdentity {
 
   /**
    * Optional trust score from AIM registry lookup.
-   * Not used in free tier but the field is reserved for future integration.
+   * Reserved for future AIM integration.
    * Range: 0.0 (untrusted) to 1.0 (fully trusted).
    */
   trustScore?: number;

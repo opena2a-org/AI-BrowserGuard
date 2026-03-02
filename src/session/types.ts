@@ -11,7 +11,7 @@ import type { DelegationRule } from '../types/delegation';
 
 /**
  * A complete agent session with timeline of events.
- * The free tier stores up to 5 sessions in chrome.storage.local.
+ * Stores up to 5 sessions in chrome.storage.local.
  */
 export interface AgentSession {
   /** Unique session identifier (UUID v4). */
@@ -94,7 +94,7 @@ export interface UserSettings {
   /** Kill switch keyboard shortcut. Default: "Ctrl+Shift+K" / "Cmd+Shift+K". */
   killSwitchShortcut: string;
 
-  /** Maximum sessions to retain. Default: 5 (free tier limit). */
+  /** Maximum sessions to retain. Default: 5. */
   maxSessions: number;
 
   /** Maximum detection log entries. Default: 100. */

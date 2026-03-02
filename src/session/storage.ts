@@ -2,7 +2,7 @@
  * Session persistence layer using chrome.storage.local.
  *
  * Manages reading and writing of sessions, delegation rules, settings,
- * and detection logs. Enforces free tier limits (5 sessions, 100 log entries).
+ * and detection logs. Enforces session limits (5 sessions, 100 log entries).
  */
 
 import type { AgentSession, StorageSchema, UserSettings } from './types';
@@ -40,7 +40,7 @@ export async function getStorageState(): Promise<StorageSchema> {
 
 /**
  * Save a new agent session to storage.
- * Enforces the free tier limit of 5 sessions by evicting the oldest.
+ * Enforces the limit of 5 sessions by evicting the oldest.
  */
 export async function saveSession(session: AgentSession): Promise<void> {
   try {
