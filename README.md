@@ -217,7 +217,6 @@ All pull requests require passing CI checks and code review.
 |---------|-------------|---------|
 | [**Secretless AI**](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools -- Claude Code, Cursor, Windsurf | `npx secretless-ai init` |
 | [**HackMyAgent**](https://github.com/opena2a-org/hackmyagent) | Security scanner -- 147 checks, attack mode, auto-fix | `npx hackmyagent secure` |
-| [**AI Browser Guard**](https://github.com/opena2a-org/AI-BrowserGuard) | Detect, control, and terminate AI agents in your browser | Chrome Web Store |
 | [**AIM**](https://github.com/opena2a-org/agent-identity-management) | Identity & access management for AI agents | `pip install aim-sdk` |
 | [**OASB**](https://github.com/opena2a-org/oasb) | Open Agent Security Benchmark -- 182 attack scenarios | `npm install @opena2a/oasb` |
 | [**ARP**](https://github.com/opena2a-org/arp) | Agent Runtime Protection -- process, network, filesystem monitoring | `npm install @opena2a/arp` |
