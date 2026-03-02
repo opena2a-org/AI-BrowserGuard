@@ -175,7 +175,6 @@ The full privacy policy is available at [opena2a.org/aibrowserguard/privacy](htt
 | `activeTab` | Access current tab for agent detection |
 | `storage` | Persist sessions, rules, and settings locally |
 | `alarms` | Delegation expiration timers |
-| `scripting` | Inject detection content scripts |
 | `tabs` | Monitor tab lifecycle for session tracking |
 | `notifications` | Boundary violation alerts |
 | `<all_urls>` | Detect agents on any page the user visits |

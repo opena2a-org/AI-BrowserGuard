@@ -25,8 +25,10 @@ Content scripts are injected via the `content_scripts` manifest key with
 `"run_at": "document_start"` to intercept automation signals early.
 
 Permissions are declared explicitly: `activeTab`, `storage`, `alarms`,
-`scripting`, `tabs`, and `notifications`. Host permissions use `<all_urls>`
-because the extension must detect agent activity on any page the user visits.
+`tabs`, and `notifications`. Host permissions use `<all_urls>` because the
+extension must detect agent activity on any page the user visits. Content
+scripts are injected via the `content_scripts` manifest key rather than the
+`chrome.scripting` API, so the `scripting` permission is not required.
 
 ## Consequences
 
