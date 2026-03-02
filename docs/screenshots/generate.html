@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f0f1a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+  .slide {
+    width: 1280px;
+    height: 800px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+  }
+
+  .slide::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    right: -200px;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(6,182,212,0.08) 0%, transparent 70%);
+  }
+
+  .slide::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -150px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+  }
+
+  .content {
+    display: flex;
+    align-items: center;
+    gap: 80px;
+    padding: 0 80px;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+  }
+
+  .text-side {
+    flex: 1;
+    color: #e2e8f0;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    background: rgba(6,182,212,0.15);
+    color: #06b6d4;
+    border: 1px solid rgba(6,182,212,0.3);
+  }
+
+  .feature-title {
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 16px;
+    color: #f1f5f9;
+  }
+
+  .feature-desc {
+    font-size: 17px;
+    line-height: 1.6;
+    color: #94a3b8;
+    max-width: 400px;
+  }
+
+  .screenshot-side {
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .screenshot-side img {
+    height: 680px;
+    width: auto;
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+  }
+
+  .branding {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    z-index: 2;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  .branding span {
+    color: #64748b;
+  }
+
+  /* Slide-specific accent colors */
+  .slide-detection .badge { background: rgba(245,158,11,0.15); color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+  .slide-delegation .badge { background: rgba(34,197,94,0.15); color: #22c55e; border-color: rgba(34,197,94,0.3); }
+  .slide-readonly .badge { background: rgba(6,182,212,0.15); color: #06b6d4; border-color: rgba(6,182,212,0.3); }
+  .slide-killswitch .badge { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Agent Detection -->
+<div class="slide slide-detection" id="slide-1">
+  <div class="content">
+    <div class="text-side">
+      <div class="badge">Real-Time Detection</div>
+      <div class="feature-title">Detect AI Agents<br>in Your Browser</div>
+      <div class="feature-desc">Identifies Playwright, Puppeteer, Selenium, and other automation frameworks through CDP monitoring, WebDriver flags, and behavioral analysis.</div>
+    </div>
+    <div class="screenshot-side">
+      <img src="1-detection.png" alt="Detection">
+    </div>
+  </div>
+  <div class="branding">AI Browser Guard <span>|</span> OpenA2A</div>
+</div>
+
+<!-- Slide 2: Delegation Wizard -->
+<div class="slide slide-delegation" id="slide-2">
+  <div class="content">
+    <div class="text-side">
+      <div class="badge">Access Control</div>
+      <div class="feature-title">Define Agent<br>Boundaries</div>
+      <div class="feature-desc">Choose from Read-Only, Limited, or Full Access presets. Set site allowlists, action restrictions, and time limits before granting access.</div>
+    </div>
+    <div class="screenshot-side">
+      <img src="2-delegation.png" alt="Delegation">
+    </div>
+  </div>
+  <div class="branding">AI Browser Guard <span>|</span> OpenA2A</div>
+</div>
+
+<!-- Slide 3: Read-Only Mode -->
+<div class="slide slide-readonly" id="slide-3">
+  <div class="content">
+    <div class="text-side">
+      <div class="badge">Capability Enforcement</div>
+      <div class="feature-title">Monitor and<br>Block Violations</div>
+      <div class="feature-desc">Active capability badges show allowed and blocked actions. Violations are caught in real-time with detailed logs of every blocked attempt.</div>
+    </div>
+    <div class="screenshot-side">
+      <img src="3-readOnly.png" alt="Read-Only Mode">
+    </div>
+  </div>
+  <div class="branding">AI Browser Guard <span>|</span> OpenA2A</div>
+</div>
+
+<!-- Slide 4: Kill Switch -->
+<div class="slide slide-killswitch" id="slide-4">
+  <div class="content">
+    <div class="text-side">
+      <div class="badge">Emergency Control</div>
+      <div class="feature-title">One-Click<br>Kill Switch</div>
+      <div class="feature-desc">Instantly terminate all agent connections, clear automation flags, and revoke delegated permissions. Keyboard shortcut: Ctrl+Shift+K.</div>
+    </div>
+    <div class="screenshot-side">
+      <img src="4-killswitch.png" alt="Kill Switch">
+    </div>
+  </div>
+  <div class="branding">AI Browser Guard <span>|</span> OpenA2A</div>
+</div>
+
+</body>
+</html>
