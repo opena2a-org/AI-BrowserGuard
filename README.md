@@ -9,6 +9,8 @@
 
 **See it. Control it. Protect it.**
 
+AI agents in your terminal cannot read browser cookies directly, but they can read cookie databases from disk. Browser Guard detects and controls AI access to browser sessions.
+
 Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
 
 [Website](https://opena2a.org/aibrowserguard) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
