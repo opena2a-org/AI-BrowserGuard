@@ -15,7 +15,7 @@ import { createTimelineEvent, appendEventToSession } from '../session/timeline';
 import { executeBackgroundKillSwitch, createInitialKillSwitchState } from '../killswitch/index';
 import type { KillSwitchState } from '../killswitch/index';
 import { isTimeBoundExpired } from '../delegation/rules';
-import { setupNotificationHandlers, clearAllNotifications } from '../alerts/notification';
+import { setupNotificationHandlers, showBoundaryNotification, clearAllNotifications } from '../alerts/notification';
 import { createBoundaryAlert } from '../alerts/boundary';
 import type { BoundaryAlert } from '../alerts/boundary';
 
@@ -54,10 +54,13 @@ function initialize(): void {
 
   // Delegation expiration alarm
   chrome.alarms.create('delegation-check', { periodInMinutes: 1 });
+  // Service worker keepalive — MV3 workers terminate after ~5 min idle
+  chrome.alarms.create('keepalive-ping', { periodInMinutes: 0.4 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'delegation-check') {
       checkDelegationExpiration().catch(() => { /* ignore */ });
     }
+    // keepalive-ping requires no action — the alarm firing is sufficient to keep the SW alive
   });
 
   // Kill switch keyboard shortcut
@@ -276,6 +279,9 @@ function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryV
     state.recentAlerts.shift();
   }
 
+  // Fire Chrome notification for the violation
+  showBoundaryNotification(alert);
+
   // Update lifetime stats
   state.lifetimeStats = {
     ...state.lifetimeStats,
@@ -300,17 +306,19 @@ function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryV
 }
 
 async function handleDelegationUpdate(rule: DelegationRule): Promise<void> {
-  // Deactivate all existing rules
-  for (const r of state.delegationRules) {
-    r.isActive = false;
-  }
-
-  // Add or update the new rule
+  // Add or update the new rule first, then deactivate all others (atomic swap — avoids brief gap with no active rule)
   const existingIndex = state.delegationRules.findIndex((r) => r.id === rule.id);
   if (existingIndex >= 0) {
     state.delegationRules[existingIndex] = rule;
   } else {
     state.delegationRules.push(rule);
+  }
+
+  // Deactivate all rules except the new one
+  for (const r of state.delegationRules) {
+    if (r.id !== rule.id) {
+      r.isActive = false;
+    }
   }
 
   await saveDelegationRules(state.delegationRules);

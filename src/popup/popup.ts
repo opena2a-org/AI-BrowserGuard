@@ -9,8 +9,9 @@ import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
 import type { AgentSession, LifetimeStats } from '../session/types';
 import type { BoundaryAlert } from '../alerts/boundary';
-import { createInitialWizardState, renderWizard, finalizeWizard } from '../delegation/wizard';
+import { createInitialWizardState, renderWizard } from '../delegation/wizard';
 import type { WizardState } from '../delegation/wizard';
+import { createRuleFromPreset } from '../delegation/rules';
 
 interface PopupState {
   detectedAgents: AgentIdentity[];
@@ -221,8 +222,37 @@ function renderDetectionPanel(): void {
       metaRow.appendChild(tag);
     }
 
+    const urlRow = document.createElement('div');
+    urlRow.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+    urlRow.textContent = truncateUrl(agent.originUrl, 45);
+    urlRow.title = agent.originUrl;
+
+    const quickAllowRow = document.createElement('div');
+    quickAllowRow.style.cssText = 'display: flex; gap: 6px; margin-top: 6px;';
+
+    const allowReadOnlyBtn = document.createElement('button');
+    allowReadOnlyBtn.type = 'button';
+    allowReadOnlyBtn.className = 'btn btn-secondary btn-sm';
+    allowReadOnlyBtn.textContent = 'Allow Read-Only';
+    allowReadOnlyBtn.addEventListener('click', () => {
+      onQuickAllowClick('readOnly').catch(() => { /* ignore */ });
+    });
+
+    const allowFullBtn = document.createElement('button');
+    allowFullBtn.type = 'button';
+    allowFullBtn.className = 'btn btn-primary btn-sm';
+    allowFullBtn.textContent = 'Allow Full Access';
+    allowFullBtn.addEventListener('click', () => {
+      onQuickAllowClick('fullAccess').catch(() => { /* ignore */ });
+    });
+
+    quickAllowRow.appendChild(allowReadOnlyBtn);
+    quickAllowRow.appendChild(allowFullBtn);
+
     card.appendChild(headerRow);
     card.appendChild(metaRow);
+    card.appendChild(urlRow);
+    card.appendChild(quickAllowRow);
     container.appendChild(card);
   }
 }
@@ -262,6 +292,23 @@ async function onResumeMonitoringClick(): Promise<void> {
     renderAll();
   } catch {
     if (btn) btn.disabled = false;
+  }
+}
+
+async function onQuickAllowClick(preset: 'readOnly' | 'fullAccess'): Promise<void> {
+  const rule = createRuleFromPreset(preset);
+  try {
+    await sendToBackground('DELEGATION_UPDATE', rule);
+    popupState.activeDelegation = rule;
+    popupState.wizardState = null;
+    const wizardContainer = document.getElementById('wizard-container');
+    if (wizardContainer) {
+      wizardContainer.classList.add('hidden');
+      wizardContainer.innerHTML = '';
+    }
+    renderAll();
+  } catch {
+    // Ignore — background may not be available
   }
 }
 
@@ -329,21 +376,40 @@ function renderViolationsPanel(): void {
   for (const alert of popupState.recentViolations.slice(-10).reverse()) {
     const item = document.createElement('div');
     item.className = 'event-item';
-    item.innerHTML = `
-      <div class="event-outcome outcome-blocked"></div>
-      <div style="flex: 1; min-width: 0;">
-        <div style="display: flex; justify-content: space-between;">
-          <span style="font-size: 13px; font-weight: 600;">${alert.title}</span>
-          <span class="severity-badge severity-${alert.severity}">${alert.severity}</span>
-        </div>
-        <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          ${truncateUrl(alert.violation.url)}
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); font-weight: 500;">
-          ${formatTimestamp(alert.violation.timestamp)}
-        </div>
-      </div>
-    `;
+
+    const dot = document.createElement('div');
+    dot.className = 'event-outcome outcome-blocked';
+
+    const body = document.createElement('div');
+    body.style.cssText = 'flex: 1; min-width: 0;';
+
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; justify-content: space-between;';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.style.cssText = 'font-size: 13px; font-weight: 600;';
+    titleSpan.textContent = alert.title;
+
+    const sevBadge = document.createElement('span');
+    sevBadge.className = `severity-badge severity-${alert.severity}`;
+    sevBadge.textContent = alert.severity;
+
+    topRow.appendChild(titleSpan);
+    topRow.appendChild(sevBadge);
+
+    const urlLine = document.createElement('div');
+    urlLine.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+    urlLine.textContent = truncateUrl(alert.violation.url);
+
+    const tsLine = document.createElement('div');
+    tsLine.style.cssText = 'font-size: 11px; color: var(--text-secondary); font-weight: 500;';
+    tsLine.textContent = formatTimestamp(alert.violation.timestamp);
+
+    body.appendChild(topRow);
+    body.appendChild(urlLine);
+    body.appendChild(tsLine);
+    item.appendChild(dot);
+    item.appendChild(body);
     container.appendChild(item);
   }
 }
@@ -369,15 +435,24 @@ function renderTimelinePanel(): void {
       : event.outcome === 'blocked' ? 'outcome-blocked'
       : 'outcome-info';
 
-    item.innerHTML = `
-      <div class="event-outcome ${outcomeClass}"></div>
-      <div style="flex: 1; min-width: 0;">
-        <div style="font-size: 13px; font-weight: 500;">${event.description}</div>
-        <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">
-          ${formatTimestamp(event.timestamp)} | ${truncateUrl(event.url, 30)}
-        </div>
-      </div>
-    `;
+    const dot = document.createElement('div');
+    dot.className = `event-outcome ${outcomeClass}`;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'flex: 1; min-width: 0;';
+
+    const descLine = document.createElement('div');
+    descLine.style.cssText = 'font-size: 13px; font-weight: 500;';
+    descLine.textContent = event.description;
+
+    const metaLine = document.createElement('div');
+    metaLine.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500;';
+    metaLine.textContent = `${formatTimestamp(event.timestamp)} | ${truncateUrl(event.url, 30)}`;
+
+    body.appendChild(descLine);
+    body.appendChild(metaLine);
+    item.appendChild(dot);
+    item.appendChild(body);
     container.appendChild(item);
   }
 }
