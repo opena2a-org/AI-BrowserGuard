@@ -62,6 +62,22 @@ describe('matchSitePattern', () => {
   it('handles invalid URLs gracefully', () => {
     expect(matchSitePattern('not-a-url', '*.example.com')).toBe(false);
   });
+
+  it('double-star matches multiple subdomain levels', () => {
+    expect(matchSitePattern('https://deep.sub.example.com', '**.example.com')).toBe(true);
+  });
+
+  it('double-star matches a single subdomain level', () => {
+    expect(matchSitePattern('https://sub.example.com', '**.example.com')).toBe(true);
+  });
+
+  it('single-star does not match multiple subdomain levels', () => {
+    expect(matchSitePattern('https://deep.sub.example.com', '*.example.com')).toBe(false);
+  });
+
+  it('double-star does not match apex domain without subdomains', () => {
+    expect(matchSitePattern('https://example.com', '**.example.com')).toBe(false);
+  });
 });
 
 describe('isDelegationExpired', () => {

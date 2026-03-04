@@ -120,6 +120,14 @@ function reportAction(
   }, '*');
 }
 
+// ── Secure-context guard ─────────────────────────────────────────────────────
+// This script runs in the MAIN world (page JS context). Only install API
+// intercepts on secure origins — http: pages do not support Web Crypto APIs
+// and are not a target environment for agent-assisted browsing sessions.
+// The check uses `!== false` so that undefined (older runtimes, test env)
+// is treated as secure and the module proceeds normally.
+if (globalThis.isSecureContext !== false) {
+
 // Listen for messages from the isolated world
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window || !e.data) return;
@@ -228,3 +236,5 @@ if (nav) {
     }
   });
 }
+
+} // end secure-context guard
