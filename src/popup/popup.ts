@@ -35,6 +35,10 @@ let popupState: PopupState = {
   lifetimeStats: null,
 };
 
+// Holds the interval ID for the delegation countdown timer.
+// Cleared whenever the popup re-renders to avoid duplicate timers.
+let countdownIntervalId: ReturnType<typeof setInterval> | null = null;
+
 function initialize(): void {
   document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
@@ -313,6 +317,12 @@ async function onQuickAllowClick(preset: 'readOnly' | 'fullAccess'): Promise<voi
 }
 
 function renderDelegationPanel(): void {
+  // Clear any existing countdown timer to avoid duplicate intervals
+  if (countdownIntervalId !== null) {
+    clearInterval(countdownIntervalId);
+    countdownIntervalId = null;
+  }
+
   const content = document.getElementById('delegation-content');
   if (!content) return;
 
@@ -334,18 +344,41 @@ function renderDelegationPanel(): void {
     labelSpan.appendChild(strong);
 
     if (rule.scope.timeBound) {
-      const remaining = new Date(rule.scope.timeBound.expiresAt).getTime() - Date.now();
+      const expiresAt = new Date(rule.scope.timeBound.expiresAt).getTime();
       const timeSpan = document.createElement('span');
+      timeSpan.id = 'delegation-countdown';
       timeSpan.style.cssText = 'font-size: 12px; font-weight: 500;';
-      if (remaining > 0) {
-        const mins = Math.ceil(remaining / 60000);
-        timeSpan.style.color = 'var(--color-warning)';
-        timeSpan.textContent = ` (${mins}m left)`;
-      } else {
-        timeSpan.style.color = 'var(--color-danger)';
-        timeSpan.textContent = ' (expired)';
-      }
       labelSpan.appendChild(timeSpan);
+
+      function updateCountdown(): void {
+        const remaining = expiresAt - Date.now();
+        if (remaining <= 0) {
+          // Clear the interval and mark as expired
+          if (countdownIntervalId !== null) {
+            clearInterval(countdownIntervalId);
+            countdownIntervalId = null;
+          }
+          timeSpan.style.color = 'var(--color-danger)';
+          timeSpan.textContent = ' (Expired)';
+
+          // If re-query finds no active rule, renderAll will hide the countdown
+          queryBackgroundStatus().catch(() => { /* ignore */ });
+          return;
+        }
+
+        const totalSeconds = Math.floor(remaining / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        const paddedSecs = secs.toString().padStart(2, '0');
+        timeSpan.style.color = remaining < 60000
+          ? 'var(--color-danger)'
+          : 'var(--color-warning)';
+        timeSpan.textContent = ` (${mins}:${paddedSecs} left)`;
+      }
+
+      // Run immediately, then update every second
+      updateCountdown();
+      countdownIntervalId = setInterval(updateCountdown, 1000);
     }
 
     const changeBtn = document.createElement('button');
@@ -430,41 +463,156 @@ function renderTimelinePanel(): void {
   const container = document.getElementById('timeline-list');
   if (!container || !panel) return;
 
-  const latestSession = popupState.sessions[0];
-  if (!latestSession || latestSession.events.length === 0) {
+  const sessions = popupState.sessions;
+
+  // Hide the panel if there are no sessions with events
+  const hasSessions = sessions.some(s => s.events.length > 0);
+  if (!hasSessions) {
     panel.classList.add('hidden');
     return;
   }
 
   panel.classList.remove('hidden');
   container.innerHTML = '';
-  const recentEvents = latestSession.events.slice(-15).reverse();
-  for (const event of recentEvents) {
-    const item = document.createElement('div');
-    item.className = 'event-item';
-    const outcomeClass = event.outcome === 'allowed' ? 'outcome-allowed'
-      : event.outcome === 'blocked' ? 'outcome-blocked'
-      : 'outcome-info';
 
-    const dot = document.createElement('div');
-    dot.className = `event-outcome ${outcomeClass}`;
+  // Show "No session history" message if sessions array is empty
+  if (sessions.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'placeholder-text-inline';
+    empty.textContent = 'No session history';
+    container.appendChild(empty);
+    return;
+  }
 
-    const body = document.createElement('div');
-    body.style.cssText = 'flex: 1; min-width: 0;';
+  // Only one session: start expanded. Multiple sessions: collapsed by default.
+  const startExpanded = sessions.length === 1;
 
-    const descLine = document.createElement('div');
-    descLine.style.cssText = 'font-size: 13px; font-weight: 500;';
-    descLine.textContent = event.description;
+  for (const session of sessions) {
+    // Skip sessions with no events
+    if (session.events.length === 0) continue;
 
-    const metaLine = document.createElement('div');
-    metaLine.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500;';
-    metaLine.textContent = `${formatTimestamp(event.timestamp)} | ${truncateUrl(event.url, 30)}`;
+    const group = document.createElement('div');
+    group.className = 'session-group';
 
-    body.appendChild(descLine);
-    body.appendChild(metaLine);
-    item.appendChild(dot);
-    item.appendChild(body);
-    container.appendChild(item);
+    // --- Session header ---
+    const header = document.createElement('div');
+    header.className = 'session-header';
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+
+    const headerLeft = document.createElement('div');
+    headerLeft.className = 'session-header-left';
+
+    const agentName = document.createElement('span');
+    agentName.className = 'session-agent-name';
+    agentName.textContent = formatAgentType(session.agent.type);
+
+    const startLabel = document.createElement('span');
+    startLabel.className = 'session-time-label';
+    startLabel.textContent = formatTimestamp(session.startedAt);
+
+    const countLabel = document.createElement('span');
+    countLabel.className = 'session-event-count';
+    countLabel.textContent = `${session.events.length} action${session.events.length === 1 ? '' : 's'}`;
+
+    headerLeft.appendChild(agentName);
+    headerLeft.appendChild(startLabel);
+    headerLeft.appendChild(countLabel);
+
+    const headerRight = document.createElement('div');
+    headerRight.className = 'session-header-right';
+
+    if (session.endedAt === null) {
+      const activeBadge = document.createElement('span');
+      activeBadge.className = 'session-status-badge session-status-active';
+      activeBadge.textContent = 'Active';
+      headerRight.appendChild(activeBadge);
+    } else {
+      const endLabel = document.createElement('span');
+      endLabel.className = 'session-time-label';
+      endLabel.textContent = `Ended ${formatTimestamp(session.endedAt)}`;
+      headerRight.appendChild(endLabel);
+    }
+
+    const chevron = document.createElement('span');
+    chevron.className = 'session-chevron';
+    chevron.textContent = startExpanded ? '-' : '+';
+    headerRight.appendChild(chevron);
+
+    header.appendChild(headerLeft);
+    header.appendChild(headerRight);
+
+    // --- Event rows container ---
+    const eventRows = document.createElement('div');
+    eventRows.className = 'session-events';
+    if (!startExpanded) {
+      eventRows.classList.add('hidden');
+    }
+
+    for (const event of session.events) {
+      const row = document.createElement('div');
+      row.className = 'session-event-row';
+
+      const arrow = document.createElement('span');
+      arrow.className = 'session-event-arrow';
+      arrow.textContent = '\u21b3'; // downward-right arrow
+
+      const timeCell = document.createElement('span');
+      timeCell.className = 'session-event-time';
+      timeCell.textContent = formatTimestamp(event.timestamp);
+
+      const capabilityCell = document.createElement('span');
+      capabilityCell.className = 'session-event-capability';
+      capabilityCell.textContent = event.attemptedAction ?? event.type;
+
+      const targetCell = document.createElement('span');
+      targetCell.className = 'session-event-target';
+      const target = event.targetSelector
+        ? truncateUrl(event.targetSelector, 28)
+        : truncateUrl(event.url, 28);
+      targetCell.textContent = target;
+      targetCell.title = event.targetSelector ?? event.url;
+
+      const outcomeChip = document.createElement('span');
+      const outcomeClass = event.outcome === 'allowed'
+        ? 'outcome-chip-allowed'
+        : event.outcome === 'blocked'
+          ? 'outcome-chip-blocked'
+          : 'outcome-chip-info';
+      outcomeChip.className = `outcome-chip ${outcomeClass}`;
+      outcomeChip.textContent = event.outcome;
+
+      row.appendChild(arrow);
+      row.appendChild(timeCell);
+      row.appendChild(capabilityCell);
+      row.appendChild(targetCell);
+      row.appendChild(outcomeChip);
+      eventRows.appendChild(row);
+    }
+
+    // Toggle expand/collapse on header click
+    function toggleGroup(): void {
+      const isHidden = eventRows.classList.contains('hidden');
+      if (isHidden) {
+        eventRows.classList.remove('hidden');
+        chevron.textContent = '-';
+      } else {
+        eventRows.classList.add('hidden');
+        chevron.textContent = '+';
+      }
+    }
+
+    header.addEventListener('click', toggleGroup);
+    header.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleGroup();
+      }
+    });
+
+    group.appendChild(header);
+    group.appendChild(eventRows);
+    container.appendChild(group);
   }
 }
 

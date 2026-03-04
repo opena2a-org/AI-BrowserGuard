@@ -777,3 +777,197 @@ kbd {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* ============================================================
+   Event Outcome Dots (violations list)
+   ============================================================ */
+
+.event-outcome {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.outcome-allowed {
+  background-color: var(--color-safe);
+}
+
+.outcome-blocked {
+  background-color: var(--color-danger);
+}
+
+.outcome-info {
+  background-color: var(--color-info);
+}
+
+/* ============================================================
+   Session Timeline — Grouped View
+   ============================================================ */
+
+.session-group {
+  border: 1px solid var(--border-default);
+  border-radius: var(--border-radius);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.session-group:last-child {
+  margin-bottom: 0;
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px var(--spacing-sm);
+  background-color: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+  gap: var(--spacing-xs);
+}
+
+.session-header:hover {
+  background-color: var(--bg-hover);
+}
+
+.session-header:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.session-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.session-agent-name {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.session-time-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.session-event-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.session-status-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.session-status-active {
+  background-color: var(--color-safe-bg);
+  color: var(--color-safe);
+}
+
+.session-chevron {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.session-events {
+  border-top: 1px solid var(--border-muted);
+  background-color: var(--bg-primary);
+}
+
+.session-event-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  padding: 4px var(--spacing-sm);
+  border-bottom: 1px solid var(--border-muted);
+  font-size: var(--font-size-xs);
+}
+
+.session-event-row:last-child {
+  border-bottom: none;
+}
+
+.session-event-arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 10px;
+}
+
+.session-event-time {
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.session-event-capability {
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 70px;
+}
+
+.session-event-target {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outcome-chip {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.outcome-chip-allowed {
+  background-color: var(--color-safe-bg);
+  color: var(--color-safe);
+}
+
+.outcome-chip-blocked {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.outcome-chip-info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
+}
