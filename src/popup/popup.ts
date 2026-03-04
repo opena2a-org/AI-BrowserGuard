@@ -324,28 +324,39 @@ function renderDelegationPanel(): void {
       fullAccess: 'Full Access',
     };
 
-    let timeInfo = '';
+    content.innerHTML = '';
+    const row = document.createElement('div');
+    row.className = 'delegation-empty';
+
+    const labelSpan = document.createElement('span');
+    const strong = document.createElement('strong');
+    strong.textContent = presetNames[rule.preset] ?? rule.preset;
+    labelSpan.appendChild(strong);
+
     if (rule.scope.timeBound) {
       const remaining = new Date(rule.scope.timeBound.expiresAt).getTime() - Date.now();
+      const timeSpan = document.createElement('span');
+      timeSpan.style.cssText = 'font-size: 12px; font-weight: 500;';
       if (remaining > 0) {
         const mins = Math.ceil(remaining / 60000);
-        timeInfo = `<span style="font-size: 12px; font-weight: 500; color: var(--color-warning);"> (${mins}m left)</span>`;
+        timeSpan.style.color = 'var(--color-warning)';
+        timeSpan.textContent = ` (${mins}m left)`;
       } else {
-        timeInfo = '<span style="font-size: 12px; font-weight: 500; color: var(--color-danger);"> (expired)</span>';
+        timeSpan.style.color = 'var(--color-danger)';
+        timeSpan.textContent = ' (expired)';
       }
+      labelSpan.appendChild(timeSpan);
     }
 
-    content.innerHTML = `
-      <div class="delegation-empty">
-        <span><strong>${presetNames[rule.preset] ?? rule.preset}</strong>${timeInfo}</span>
-        <button id="delegation-wizard-btn" class="btn btn-secondary btn-sm">Change</button>
-      </div>
-    `;
+    const changeBtn = document.createElement('button');
+    changeBtn.id = 'delegation-wizard-btn';
+    changeBtn.className = 'btn btn-secondary btn-sm';
+    changeBtn.textContent = 'Change';
+    changeBtn.addEventListener('click', onDelegationWizardClick);
 
-    const wizardBtn = document.getElementById('delegation-wizard-btn');
-    if (wizardBtn) {
-      wizardBtn.addEventListener('click', onDelegationWizardClick);
-    }
+    row.appendChild(labelSpan);
+    row.appendChild(changeBtn);
+    content.appendChild(row);
   } else {
     const wizardOpen = popupState.wizardState !== null;
     content.innerHTML = `

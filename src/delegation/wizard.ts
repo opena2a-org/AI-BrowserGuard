@@ -276,7 +276,10 @@ function renderSitesStep(
     const p = state.sitePatterns[i];
     const row = document.createElement('div');
     row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;';
-    row.innerHTML = `<span style="color: var(--text-primary);">${p.pattern} (${p.action})</span>`;
+    const label = document.createElement('span');
+    label.style.cssText = 'color: var(--text-primary);';
+    label.textContent = `${p.pattern} (${p.action})`;
+    row.appendChild(label);
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-secondary';
     removeBtn.textContent = 'Remove';
