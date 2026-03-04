@@ -90,7 +90,7 @@ export function detectOpenAIOperator(): FrameworkDetectionResult {
   }
 
   // Check for accessibility tree query patterns
-  if ('getComputedAccessibleNode' in Element.prototype) {
+  if (typeof Element !== 'undefined' && 'getComputedAccessibleNode' in Element.prototype) {
     signals.accessibilityAPI = true;
   }
 

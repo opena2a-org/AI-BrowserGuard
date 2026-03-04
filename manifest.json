@@ -14,6 +14,12 @@
       "matches": ["<all_urls>"],
       "js": ["dist/content/index.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content/interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "action": {

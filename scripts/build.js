@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const root = resolve(__dirname, '..');
 
-const entries = ['content', 'background', 'popup'];
+const entries = ['content', 'interceptor', 'background', 'popup'];
 
 // Clean dist
 if (existsSync('dist')) {
@@ -32,6 +32,7 @@ for (const entry of entries) {
 const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf-8'));
 manifest.background.service_worker = 'background/index.js';
 manifest.content_scripts[0].js = ['content/index.js'];
+manifest.content_scripts[1].js = ['content/interceptor.js'];
 manifest.action.default_popup = 'popup/index.html';
 writeFileSync(resolve(root, 'dist', 'manifest.json'), JSON.stringify(manifest, null, 2));
 

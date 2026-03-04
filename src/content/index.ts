@@ -6,18 +6,75 @@
  * service worker.
  */
 
-import type { MessagePayload, MessageType } from '../types/events';
+import type { MessagePayload, MessageType, BoundaryViolation } from '../types/events';
 import { startDetectionMonitor } from './detector';
 import type { DetectionVerdictResult } from './detector';
 import { startBoundaryMonitor, updateActiveRule, getMonitorState } from './monitor';
 import { executeContentKillSwitch, registerCleanup } from '../killswitch/index';
 import type { DelegationRule } from '../types/delegation';
 
+const GUARD_NONCE = crypto.randomUUID();
+const MSG_INIT = 'AI_GUARD:INIT';
+const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
+const MSG_ACTION = 'AI_GUARD:ACTION';
+
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
 let currentAgentId: string | null = null;
 
+/** Send the current delegation rule to the MAIN world interceptor. */
+function syncRuleToMainWorld(rule: DelegationRule | null): void {
+  const ruleData = rule
+    ? {
+        isActive: rule.isActive,
+        expiresAt: rule.scope.timeBound?.expiresAt ?? null,
+        actionRestrictions: rule.scope.actionRestrictions.map((r) => ({
+          capability: r.capability,
+          action: r.action,
+        })),
+        sitePatterns: rule.scope.sitePatterns.map((p) => ({
+          pattern: p.pattern,
+          action: p.action,
+        })),
+      }
+    : null;
+  window.postMessage({ type: MSG_RULE_UPDATE, nonce: GUARD_NONCE, rule: ruleData }, '*');
+}
+
 function initialize(): void {
+  // Introduce ourselves to the MAIN world interceptor with our nonce
+  window.postMessage({ type: MSG_INIT, nonce: GUARD_NONCE }, '*');
+
+  // Receive action reports from the MAIN world interceptor
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (e.source !== window || !e.data) return;
+    if (e.data.type !== MSG_ACTION) return;
+    if (!e.data.nonce || e.data.nonce !== GUARD_NONCE) return;
+
+    const { capability, url, blocked, reason, timestamp } = e.data as {
+      capability: string;
+      url: string;
+      blocked: boolean;
+      reason: string;
+      timestamp: string;
+    };
+
+    if (blocked) {
+      const violation: BoundaryViolation = {
+        id: crypto.randomUUID(),
+        timestamp: timestamp ?? new Date().toISOString(),
+        agentId: currentAgentId ?? '',
+        attemptedAction: capability as BoundaryViolation['attemptedAction'],
+        url,
+        targetSelector: undefined,
+        blockingRuleId: getMonitorState().activeRule?.id ?? 'none',
+        reason,
+        userOverride: false,
+      };
+      sendToBackground('BOUNDARY_CHECK_REQUEST', violation).catch(() => { /* ignore */ });
+    }
+  });
+
   // Set up message listener for background communication
   chrome.runtime.onMessage.addListener(handleMessage);
 
@@ -48,6 +105,7 @@ function initialize(): void {
         const data = response as { activeDelegation?: DelegationRule };
         if (data.activeDelegation) {
           updateActiveRule(data.activeDelegation);
+          syncRuleToMainWorld(data.activeDelegation);
         }
       }
     }).catch(() => {
@@ -97,6 +155,7 @@ function handleMessage(
     case 'DELEGATION_UPDATE': {
       const rule = message.data as DelegationRule | null;
       updateActiveRule(rule);
+      syncRuleToMainWorld(rule);
 
       // Restart monitor with new rule
       if (monitorCleanup) monitorCleanup();

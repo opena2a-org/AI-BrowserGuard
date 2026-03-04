@@ -36,6 +36,23 @@ function getConfig() {
     });
   }
 
+  if (entry === 'interceptor') {
+    return defineConfig({
+      build: {
+        ...sharedConfig,
+        outDir: 'dist',
+        emptyOutDir: false,
+        lib: {
+          entry: resolve(__dirname, 'src/content/interceptor.ts'),
+          formats: ['iife'],
+          name: 'AIBrowserGuardInterceptor',
+          fileName: () => 'content/interceptor.js',
+        },
+      },
+      resolve: { alias: { '@': resolve(__dirname, 'src') } },
+    });
+  }
+
   if (entry === 'background') {
     return defineConfig({
       build: {

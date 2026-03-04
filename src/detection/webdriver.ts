@@ -22,6 +22,23 @@ export interface WebDriverDetectionResult {
 export function detectWebDriverFlag(): WebDriverDetectionResult {
   const signals: Record<string, unknown> = {};
 
+  // Check for webdriver attribute on the HTML element (set by some WebDriver implementations)
+  try {
+    const htmlEl = document.documentElement;
+    if (htmlEl && typeof htmlEl.getAttribute === 'function' && htmlEl.getAttribute('webdriver') !== null) {
+      signals.htmlWebdriverAttr = true;
+      return {
+        detected: true,
+        method: 'webdriver-flag',
+        confidence: 'confirmed',
+        detail: 'HTML element has webdriver attribute set, indicating WebDriver control.',
+        signals,
+      };
+    }
+  } catch {
+    // document.documentElement may not be available
+  }
+
   // Direct value check
   const webdriverValue = navigator.webdriver;
   signals.webdriverValue = webdriverValue;
@@ -81,8 +98,9 @@ export function detectNavigatorAnomalies(): WebDriverDetectionResult {
   const details: string[] = [];
 
   // Headless: plugins length is 0
-  signals.pluginsLength = navigator.plugins.length;
-  if (navigator.plugins.length === 0) {
+  const pluginsLength = navigator.plugins?.length ?? 0;
+  signals.pluginsLength = pluginsLength;
+  if (pluginsLength === 0) {
     detected = true;
     details.push('No browser plugins detected (headless indicator).');
   }
