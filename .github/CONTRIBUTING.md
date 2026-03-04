@@ -50,16 +50,10 @@ pushes to `main`, and weekly on a schedule.
 These are deferred, not forgotten:
 
 ### Kill switch keyboard shortcut UI hint
-The manifest declares `Ctrl+Shift+K` / `Cmd+Shift+K` as the kill switch
-shortcut (`commands._execute_action` equivalent via `commands` key), but the
-popup does not display this shortcut anywhere. Add a small label near the Kill
-Switch button:
-
-```
-Kill Switch  [⌘⇧K]
-```
-
-File to edit: `src/popup/popup.ts` — `renderKillSwitchPanel()` button row.
+**Resolved.** The shortcut `Ctrl+Shift+K` is already displayed in
+`src/popup/index.html` via `<span class="header-shortcut"><kbd>Ctrl+Shift+K</kbd></span>`.
+The label is hardcoded (not OS-aware). A follow-up could make it platform-aware
+(`Cmd+Shift+K` on macOS), but the hint is present and visible.
 
 ### Session storage cap
 `chrome.storage.local` holds all `AgentSession[]` without a hard cap. The

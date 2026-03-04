@@ -112,20 +112,25 @@ function setupEventListeners(): void {
     });
   } // end chrome.runtime guard
 
-  // Listen for delegation activation from wizard
+  // Listen for delegation activation from wizard.
+  // Optimistic update: apply to UI immediately so the popup responds instantly
+  // even if the background service worker is sleeping (common in MV3).
   document.addEventListener('delegation-activated', ((e: CustomEvent<DelegationRule>) => {
     const rule = e.detail;
-    sendToBackground('DELEGATION_UPDATE', rule).then(() => {
-      popupState.activeDelegation = rule;
-      popupState.wizardState = null;
-      const wizardContainer = document.getElementById('wizard-container');
-      if (wizardContainer) {
-        wizardContainer.classList.add('hidden');
-        wizardContainer.innerHTML = '';
-      }
-      renderAll();
-    }).catch(() => {
-      // Show error
+
+    // Update UI first — do not wait for the background response.
+    popupState.activeDelegation = rule;
+    popupState.wizardState = null;
+    const wizardContainer = document.getElementById('wizard-container');
+    if (wizardContainer) {
+      wizardContainer.classList.add('hidden');
+      wizardContainer.innerHTML = '';
+    }
+    renderAll();
+
+    // Sync to background asynchronously.
+    sendToBackground('DELEGATION_UPDATE', rule).catch((err) => {
+      console.error('[AI Browser Guard] Failed to sync delegation to background:', err);
     });
   }) as EventListener);
 }
@@ -241,7 +246,7 @@ function renderDetectionPanel(): void {
     allowReadOnlyBtn.className = 'btn btn-secondary btn-sm';
     allowReadOnlyBtn.textContent = 'Allow Read-Only';
     allowReadOnlyBtn.addEventListener('click', () => {
-      onQuickAllowClick('readOnly').catch(() => { /* ignore */ });
+      onQuickAllowClick('readOnly');
     });
 
     const allowFullBtn = document.createElement('button');
@@ -249,7 +254,7 @@ function renderDetectionPanel(): void {
     allowFullBtn.className = 'btn btn-primary btn-sm';
     allowFullBtn.textContent = 'Allow Full Access';
     allowFullBtn.addEventListener('click', () => {
-      onQuickAllowClick('fullAccess').catch(() => { /* ignore */ });
+      onQuickAllowClick('fullAccess');
     });
 
     quickAllowRow.appendChild(allowReadOnlyBtn);
@@ -301,21 +306,22 @@ async function onResumeMonitoringClick(): Promise<void> {
   }
 }
 
-async function onQuickAllowClick(preset: 'readOnly' | 'fullAccess'): Promise<void> {
+function onQuickAllowClick(preset: 'readOnly' | 'fullAccess'): void {
   const rule = createRuleFromPreset(preset);
-  try {
-    await sendToBackground('DELEGATION_UPDATE', rule);
-    popupState.activeDelegation = rule;
-    popupState.wizardState = null;
-    const wizardContainer = document.getElementById('wizard-container');
-    if (wizardContainer) {
-      wizardContainer.classList.add('hidden');
-      wizardContainer.innerHTML = '';
-    }
-    renderAll();
-  } catch {
-    // Ignore — background may not be available
+
+  // Optimistic update — same pattern as wizard activation.
+  popupState.activeDelegation = rule;
+  popupState.wizardState = null;
+  const wizardContainer = document.getElementById('wizard-container');
+  if (wizardContainer) {
+    wizardContainer.classList.add('hidden');
+    wizardContainer.innerHTML = '';
   }
+  renderAll();
+
+  sendToBackground('DELEGATION_UPDATE', rule).catch((err) => {
+    console.error('[AI Browser Guard] Failed to sync quick-allow to background:', err);
+  });
 }
 
 function renderDelegationPanel(): void {
