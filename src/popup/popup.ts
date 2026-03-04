@@ -517,7 +517,7 @@ function renderTimelinePanel(): void {
 
     const startLabel = document.createElement('span');
     startLabel.className = 'session-time-label';
-    startLabel.textContent = formatTimestamp(session.startedAt);
+    startLabel.textContent = formatTimeShort(session.startedAt);
 
     const countLabel = document.createElement('span');
     countLabel.className = 'session-event-count';
@@ -538,7 +538,7 @@ function renderTimelinePanel(): void {
     } else {
       const endLabel = document.createElement('span');
       endLabel.className = 'session-time-label';
-      endLabel.textContent = `Ended ${formatTimestamp(session.endedAt)}`;
+      endLabel.textContent = `Ended ${formatTimeShort(session.endedAt)}`;
       headerRight.appendChild(endLabel);
     }
 
@@ -740,6 +740,15 @@ function formatTimestamp(isoTimestamp: string): string {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  });
+}
+
+// Compact HH:MM format for space-constrained contexts (session header row).
+function formatTimeShort(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
