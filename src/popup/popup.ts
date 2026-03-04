@@ -148,6 +148,8 @@ function onDelegationWizardClick(): void {
     wizardContainer.innerHTML = '';
     popupState.wizardState = null;
   }
+  // Re-render delegation panel so Configure/Cancel label updates
+  renderDelegationPanel();
 }
 
 function renderWizardUI(): void {
@@ -187,16 +189,36 @@ function renderDetectionPanel(): void {
   for (const agent of popupState.detectedAgents) {
     const card = document.createElement('div');
     card.className = 'detection-card';
-    card.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-        <strong>${formatAgentType(agent.type)}</strong>
-        <span class="severity-badge severity-badge-high">${agent.confidence}</span>
-      </div>
-      <div style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">
-        ${formatTimestamp(agent.detectedAt)}
-        ${agent.detectionMethods.map((m) => `<span class="method-tag">${m}</span>`).join(' ')}
-      </div>
-    `;
+
+    const headerRow = document.createElement('div');
+    headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;';
+
+    const name = document.createElement('strong');
+    name.textContent = formatAgentType(agent.type);
+
+    const badge = document.createElement('span');
+    badge.className = 'severity-badge severity-badge-high';
+    badge.textContent = `Confidence: ${agent.confidence}`;
+
+    headerRow.appendChild(name);
+    headerRow.appendChild(badge);
+
+    const metaRow = document.createElement('div');
+    metaRow.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500;';
+
+    const ts = document.createElement('span');
+    ts.textContent = formatTimestamp(agent.detectedAt) + ' ';
+    metaRow.appendChild(ts);
+
+    for (const m of agent.detectionMethods) {
+      const tag = document.createElement('span');
+      tag.className = 'method-tag';
+      tag.textContent = m;
+      metaRow.appendChild(tag);
+    }
+
+    card.appendChild(headerRow);
+    card.appendChild(metaRow);
     container.appendChild(card);
   }
 }
@@ -205,13 +227,37 @@ function renderKillSwitchPanel(): void {
   const btn = document.getElementById('kill-switch-btn') as HTMLButtonElement | null;
   if (!btn) return;
 
-  btn.disabled = popupState.detectedAgents.length === 0 && !popupState.killSwitchActive;
-
   if (popupState.killSwitchActive) {
-    btn.textContent = 'Killed';
-    btn.disabled = true;
-  } else {
+    // Replace kill switch button with Resume Monitoring
+    btn.textContent = 'Resume Monitoring';
+    btn.disabled = false;
+    btn.className = 'btn btn-primary btn-sm';
+    btn.onclick = () => { onResumeMonitoringClick().catch(() => { /* ignore */ }); };
+  } else if (popupState.detectedAgents.length > 0) {
+    // Agent active — show kill switch enabled and dangerous
     btn.textContent = 'Kill Switch';
+    btn.disabled = false;
+    btn.className = 'btn-danger-compact';
+    btn.onclick = () => { onKillSwitchClick().catch(() => { /* ignore */ }); };
+  } else {
+    // Idle — no agent to kill, show as neutral/inactive
+    btn.textContent = 'Kill Switch';
+    btn.disabled = true;
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.onclick = null;
+  }
+}
+
+async function onResumeMonitoringClick(): Promise<void> {
+  const btn = document.getElementById('kill-switch-btn') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+
+  try {
+    await sendToBackground('KILL_SWITCH_RESET', {});
+    popupState.killSwitchActive = false;
+    renderAll();
+  } catch {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -250,10 +296,11 @@ function renderDelegationPanel(): void {
       wizardBtn.addEventListener('click', onDelegationWizardClick);
     }
   } else {
+    const wizardOpen = popupState.wizardState !== null;
     content.innerHTML = `
       <div class="delegation-empty">
         <span class="placeholder-text-inline">No delegation active</span>
-        <button id="delegation-wizard-btn" class="btn btn-primary btn-sm">Configure</button>
+        <button id="delegation-wizard-btn" class="btn ${wizardOpen ? 'btn-secondary' : 'btn-primary'} btn-sm">${wizardOpen ? 'Cancel' : 'Configure'}</button>
       </div>
     `;
     const wizardBtn = document.getElementById('delegation-wizard-btn');

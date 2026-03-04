@@ -215,12 +215,19 @@ function renderPresetStep(
   const presets: DelegationPreset[] = ['readOnly', 'limited', 'fullAccess'];
   for (const preset of presets) {
     const info = PRESET_DESCRIPTIONS[preset];
-    const card = document.createElement('div');
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = `preset-card${state.selectedPreset === preset ? ' selected' : ''}`;
-    card.innerHTML = `
-      <strong>${info.title}</strong>
-      <p style="margin: 4px 0 0; font-size: 11px; color: var(--text-secondary);">${info.description}</p>
-    `;
+
+    const title = document.createElement('strong');
+    title.textContent = info.title;
+
+    const desc = document.createElement('p');
+    desc.style.cssText = 'margin: 4px 0 0; font-size: 11px; color: var(--text-secondary);';
+    desc.textContent = info.description;
+
+    card.appendChild(title);
+    card.appendChild(desc);
     card.addEventListener('click', () => {
       onStateChange(selectPreset(state, preset));
     });

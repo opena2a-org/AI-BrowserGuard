@@ -133,6 +133,15 @@ function handleMessage(
       return true; // async response
     }
 
+    case 'KILL_SWITCH_RESET': {
+      state.killSwitch.isActive = false;
+      state.killSwitch.lastEvent = null;
+      state.killSwitch.lastActivatedAt = null;
+      updateBadge();
+      sendResponse({ success: true });
+      return false;
+    }
+
     case 'DELEGATION_UPDATE': {
       const rule = message.data as DelegationRule;
       handleDelegationUpdate(rule).then(() => {
@@ -205,7 +214,18 @@ async function handleDetection(tabId: number, event: DetectionEvent): Promise<vo
   };
 
   // Add detection event to timeline
-  const timelineEvent = createTimelineEvent('detection', event.url, `Agent detected: ${event.agent.type}`, {
+  const agentDisplayNames: Record<string, string> = {
+    playwright: 'Playwright',
+    puppeteer: 'Puppeteer',
+    selenium: 'Selenium',
+    'anthropic-computer-use': 'Anthropic Computer Use',
+    'openai-operator': 'OpenAI Operator',
+    'cdp-generic': 'CDP Agent',
+    'webdriver-generic': 'WebDriver Agent',
+    unknown: 'Unknown Agent',
+  };
+  const agentDisplayName = agentDisplayNames[event.agent.type] ?? event.agent.type;
+  const timelineEvent = createTimelineEvent('detection', event.url, `Agent detected: ${agentDisplayName}`, {
     outcome: 'informational',
   });
   const updatedSession = appendEventToSession(session, timelineEvent);
