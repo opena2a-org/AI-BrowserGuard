@@ -92,23 +92,25 @@ function setupEventListeners(): void {
     wizardBtn.addEventListener('click', onDelegationWizardClick);
   }
 
-  // Listen for live updates from background
-  chrome.runtime.onMessage.addListener((message: MessagePayload) => {
+  // Listen for live updates from background (guard required — chrome is undefined outside extension)
+  if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message: MessagePayload) => {
     if (!message || !message.type) return;
 
-    switch (message.type) {
-      case 'DETECTION_RESULT':
-        queryBackgroundStatus();
-        break;
-      case 'KILL_SWITCH_RESULT':
-        popupState.killSwitchActive = true;
-        renderAll();
-        break;
-      case 'DELEGATION_UPDATE':
-        queryBackgroundStatus();
-        break;
-    }
-  });
+      switch (message.type) {
+        case 'DETECTION_RESULT':
+          queryBackgroundStatus();
+          break;
+        case 'KILL_SWITCH_RESULT':
+          popupState.killSwitchActive = true;
+          renderAll();
+          break;
+        case 'DELEGATION_UPDATE':
+          queryBackgroundStatus();
+          break;
+      }
+    });
+  } // end chrome.runtime guard
 
   // Listen for delegation activation from wizard
   document.addEventListener('delegation-activated', ((e: CustomEvent<DelegationRule>) => {
@@ -710,6 +712,10 @@ async function sendToBackground(type: MessageType, data: unknown): Promise<unkno
     data,
     sentAt: new Date().toISOString(),
   };
+
+  if (typeof chrome === 'undefined' || !chrome.runtime) {
+    return Promise.reject(new Error('Chrome runtime not available'));
+  }
 
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(message, (response) => {
