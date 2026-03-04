@@ -7,7 +7,7 @@
 import type { MessagePayload, MessageType } from '../types/events';
 import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
-import type { AgentSession } from '../session/types';
+import type { AgentSession, LifetimeStats } from '../session/types';
 import type { BoundaryAlert } from '../alerts/boundary';
 import { createInitialWizardState, renderWizard, finalizeWizard } from '../delegation/wizard';
 import type { WizardState } from '../delegation/wizard';
@@ -20,6 +20,7 @@ interface PopupState {
   sessions: AgentSession[];
   wizardState: WizardState | null;
   loading: boolean;
+  lifetimeStats: LifetimeStats | null;
 }
 
 let popupState: PopupState = {
@@ -30,6 +31,7 @@ let popupState: PopupState = {
   sessions: [],
   wizardState: null,
   loading: true,
+  lifetimeStats: null,
 };
 
 function initialize(): void {
@@ -53,6 +55,7 @@ async function queryBackgroundStatus(): Promise<void> {
       popupState.activeDelegation = data.activeDelegation ?? null;
       popupState.killSwitchActive = data.killSwitchActive ?? false;
       popupState.recentViolations = data.recentViolations ?? [];
+      popupState.lifetimeStats = (data as { lifetimeStats?: LifetimeStats }).lifetimeStats ?? null;
     }
   } catch {
     // Background may not be available
@@ -168,6 +171,7 @@ function renderAll(): void {
   renderDelegationPanel();
   renderViolationsPanel();
   renderTimelinePanel();
+  renderMetricsPanel();
   renderStatusBadge();
 }
 
@@ -376,6 +380,72 @@ function renderTimelinePanel(): void {
     `;
     container.appendChild(item);
   }
+}
+
+function renderMetricsPanel(): void {
+  const panel = document.getElementById('metrics-panel');
+  const grid = document.getElementById('metrics-grid');
+  const since = document.getElementById('metrics-since');
+  if (!panel || !grid || !since) return;
+
+  const stats = popupState.lifetimeStats;
+  if (!stats || stats.totalSessions === 0) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  grid.innerHTML = '';
+
+  // Sessions monitored
+  addMetricCell(grid, String(stats.totalSessions), 'sessions monitored');
+
+  // Actions blocked — show 0 as a positive ("no violations")
+  if (stats.totalActionsBlocked > 0) {
+    addMetricCell(grid, String(stats.totalActionsBlocked), 'actions blocked');
+  } else {
+    addMetricCell(grid, 'None', 'violations detected');
+  }
+
+  // Top detected agent framework
+  const types = Object.entries(stats.agentTypesDetected);
+  if (types.length > 0) {
+    const topType = types.sort((a, b) => b[1] - a[1])[0][0];
+    addMetricCell(grid, formatAgentType(topType), 'most seen framework');
+  } else {
+    const uniqueCount = types.length;
+    addMetricCell(grid, String(uniqueCount), 'framework types');
+  }
+
+  // "Active since" line
+  since.textContent = '';
+  if (stats.firstActiveAt) {
+    const date = new Date(stats.firstActiveAt);
+    const daysSince = Math.floor((Date.now() - date.getTime()) / 86400000);
+    const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const sinceText = document.createElement('span');
+    sinceText.textContent = daysSince === 0
+      ? `Monitoring active since today (${dateStr})`
+      : `Monitoring active since ${dateStr} (${daysSince} day${daysSince === 1 ? '' : 's'})`;
+    since.appendChild(sinceText);
+  }
+}
+
+function addMetricCell(container: HTMLElement, value: string, label: string): void {
+  const cell = document.createElement('div');
+  cell.className = 'metric-cell';
+
+  const val = document.createElement('div');
+  val.className = 'metric-value';
+  val.textContent = value;
+
+  const lbl = document.createElement('div');
+  lbl.className = 'metric-label';
+  lbl.textContent = label;
+
+  cell.appendChild(val);
+  cell.appendChild(lbl);
+  container.appendChild(cell);
 }
 
 function renderStatusBadge(): void {

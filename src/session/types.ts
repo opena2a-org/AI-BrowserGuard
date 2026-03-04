@@ -105,6 +105,32 @@ export interface UserSettings {
 }
 
 /**
+ * Cumulative lifetime protection statistics.
+ * Never evicted — grows across all sessions and page loads.
+ * Used to demonstrate active protection in the popup summary panel.
+ */
+export interface LifetimeStats {
+  /** ISO timestamp of the first detected agent session. */
+  firstActiveAt: string | null;
+
+  /** Total agent sessions detected across all time. */
+  totalSessions: number;
+
+  /** Total actions blocked by delegation rules across all time. */
+  totalActionsBlocked: number;
+
+  /** Count of each agent type detected. Keys are agent type strings. */
+  agentTypesDetected: Record<string, number>;
+}
+
+export const DEFAULT_LIFETIME_STATS: LifetimeStats = {
+  firstActiveAt: null,
+  totalSessions: 0,
+  totalActionsBlocked: 0,
+  agentTypesDetected: {},
+};
+
+/**
  * Default user settings applied on first install.
  */
 export const DEFAULT_SETTINGS: UserSettings = {

@@ -8,7 +8,9 @@ import type { MessagePayload, DetectionEvent, KillSwitchEvent, AgentEvent, Bound
 import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
 import type { AgentSession } from '../session/types';
-import { getStorageState, saveSession, updateSession, saveDelegationRules, appendDetectionLog, updateSettings } from '../session/storage';
+import { getStorageState, saveSession, updateSession, saveDelegationRules, appendDetectionLog, updateSettings, getLifetimeStats, updateLifetimeStats } from '../session/storage';
+import type { LifetimeStats } from '../session/types';
+import { DEFAULT_LIFETIME_STATS } from '../session/types';
 import { createTimelineEvent, appendEventToSession } from '../session/timeline';
 import { executeBackgroundKillSwitch, createInitialKillSwitchState } from '../killswitch/index';
 import type { KillSwitchState } from '../killswitch/index';
@@ -23,6 +25,7 @@ interface BackgroundState {
   delegationRules: DelegationRule[];
   killSwitch: KillSwitchState;
   recentAlerts: BoundaryAlert[];
+  lifetimeStats: LifetimeStats;
 }
 
 const state: BackgroundState = {
@@ -31,6 +34,7 @@ const state: BackgroundState = {
   delegationRules: [],
   killSwitch: createInitialKillSwitchState(),
   recentAlerts: [],
+  lifetimeStats: { ...DEFAULT_LIFETIME_STATS },
 };
 
 function initialize(): void {
@@ -71,6 +75,7 @@ function initialize(): void {
 async function loadPersistedState(): Promise<void> {
   const stored = await getStorageState();
   state.delegationRules = stored.delegationRules;
+  state.lifetimeStats = await getLifetimeStats();
 
   // Check for active sessions that may have survived a restart
   for (const session of stored.sessions) {
@@ -170,6 +175,7 @@ function handleMessage(
         killSwitchActive: state.killSwitch.isActive,
         recentViolations: state.recentAlerts,
         delegationRules: state.delegationRules,
+        lifetimeStats: state.lifetimeStats,
       });
       return false;
     }
@@ -236,6 +242,18 @@ async function handleDetection(tabId: number, event: DetectionEvent): Promise<vo
   // Log detection
   await appendDetectionLog(event);
 
+  // Update lifetime stats
+  const agentType = event.agent.type;
+  const updatedTypes = { ...state.lifetimeStats.agentTypesDetected };
+  updatedTypes[agentType] = (updatedTypes[agentType] ?? 0) + 1;
+  state.lifetimeStats = {
+    ...state.lifetimeStats,
+    firstActiveAt: state.lifetimeStats.firstActiveAt ?? new Date().toISOString(),
+    totalSessions: state.lifetimeStats.totalSessions + 1,
+    agentTypesDetected: updatedTypes,
+  };
+  updateLifetimeStats(() => state.lifetimeStats).catch(() => { /* non-critical */ });
+
   updateBadge();
 }
 
@@ -257,6 +275,13 @@ function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryV
   if (state.recentAlerts.length > 20) {
     state.recentAlerts.shift();
   }
+
+  // Update lifetime stats
+  state.lifetimeStats = {
+    ...state.lifetimeStats,
+    totalActionsBlocked: state.lifetimeStats.totalActionsBlocked + 1,
+  };
+  updateLifetimeStats(() => state.lifetimeStats).catch(() => { /* non-critical */ });
 
   // Log the violation as a timeline event if we have a session
   if (tabId !== undefined) {

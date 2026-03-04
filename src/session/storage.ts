@@ -5,8 +5,8 @@
  * and detection logs. Enforces session limits (5 sessions, 100 log entries).
  */
 
-import type { AgentSession, StorageSchema, UserSettings } from './types';
-import { DEFAULT_SETTINGS } from './types';
+import type { AgentSession, StorageSchema, UserSettings, LifetimeStats } from './types';
+import { DEFAULT_SETTINGS, DEFAULT_LIFETIME_STATS } from './types';
 import type { DelegationRule } from '../types/delegation';
 import type { DetectionEvent } from '../types/events';
 
@@ -140,6 +140,33 @@ export async function updateSettings(updates: Partial<UserSettings>): Promise<vo
     await chrome.storage.local.set({ settings: merged });
   } catch (err) {
     console.error('[AI Browser Guard] Failed to update settings:', err);
+  }
+}
+
+/**
+ * Retrieve lifetime protection stats from storage.
+ */
+export async function getLifetimeStats(): Promise<LifetimeStats> {
+  try {
+    const result = await chrome.storage.local.get('lifetimeStats');
+    return { ...DEFAULT_LIFETIME_STATS, ...(result.lifetimeStats ?? {}) };
+  } catch {
+    return { ...DEFAULT_LIFETIME_STATS };
+  }
+}
+
+/**
+ * Update lifetime stats with an updater function.
+ */
+export async function updateLifetimeStats(
+  updater: (stats: LifetimeStats) => LifetimeStats
+): Promise<void> {
+  try {
+    const current = await getLifetimeStats();
+    const updated = updater(current);
+    await chrome.storage.local.set({ lifetimeStats: updated });
+  } catch {
+    // Best effort — stats are non-critical
   }
 }
 
