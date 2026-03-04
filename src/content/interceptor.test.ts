@@ -121,23 +121,11 @@ describe('matchesPattern — hostname patterns (no ://)', () => {
     expect(matchesPattern('https://deep.sub.example.com', '*.example.com')).toBe(false);
   });
 
-  /**
-   * NOTE: The `**` branch has a known ordering issue in the regex substitution
-   * pipeline: the `.*` produced by `**→.*` has its `*` re-substituted by the
-   * subsequent `*→[^.]*` pass, yielding `.[^.]*` instead of `.*`.  As a
-   * result `**.example.com` behaves identically to `?.example.com` and does
-   * NOT match multi-level paths like `deep.sub.example.com`.  The tests below
-   * document the actual runtime behaviour of the implementation.
-   */
-  it('double-star pattern does not match multiple subdomain levels (implementation limitation)', () => {
-    // Implementation note: ** is corrupted to .[^.]* by the substitution order
-    // so deep.sub.example.com does not match **.example.com.
-    expect(matchesPattern('https://deep.sub.example.com', '**.example.com')).toBe(false);
+  it('double-star pattern matches multiple subdomain levels', () => {
+    expect(matchesPattern('https://deep.sub.example.com', '**.example.com')).toBe(true);
   });
 
-  it('double-star pattern matches a single subdomain level (implementation behaviour)', () => {
-    // **.example.com after substitution becomes ^.[^.]*\.example\.com$
-    // which matches sub.example.com (one label + dot pattern)
+  it('double-star pattern matches a single subdomain level', () => {
     expect(matchesPattern('https://sub.example.com', '**.example.com')).toBe(true);
   });
 

@@ -56,8 +56,9 @@ export function matchesPattern(url: string, pattern: string): boolean {
       const hostname = new URL(url).hostname;
       const regexStr = pattern
         .replace(/\./g, '\\.')
-        .replace(/\*\*/g, '.*')
-        .replace(/\*/g, '[^.]*');
+        .replace(/\*\*/g, '\x00') // placeholder to protect double-star from single-star pass
+        .replace(/\*/g, '[^.]*')
+        .replace(/\x00/g, '.*');  // restore double-star as any-depth wildcard
       return new RegExp(`^${regexStr}$`).test(hostname);
     }
     const regexStr = pattern

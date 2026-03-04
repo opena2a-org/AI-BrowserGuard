@@ -85,8 +85,9 @@ export function matchSitePattern(url: string, pattern: string): boolean {
       const hostname = parsedUrl.hostname;
       const regexStr = pattern
         .replace(/\./g, '\\.')
-        .replace(/\*\*/g, '.*')
-        .replace(/\*/g, '[^.]*');
+        .replace(/\*\*/g, '\x00')
+        .replace(/\*/g, '[^.]*')
+        .replace(/\x00/g, '.*');
       return new RegExp(`^${regexStr}$`).test(hostname);
     }
     const regexStr = pattern
