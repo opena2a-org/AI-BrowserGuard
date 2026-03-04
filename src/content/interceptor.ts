@@ -28,7 +28,7 @@ let activeRule: InterceptorRule | null = null;
 let guardNonce: string | null = null;
 
 /** Glob-style URL pattern matching (mirrors monitor.ts matchSitePattern). */
-function matchesPattern(url: string, pattern: string): boolean {
+export function matchesPattern(url: string, pattern: string): boolean {
   try {
     if (!pattern.includes('://')) {
       const hostname = new URL(url).hostname;
@@ -48,22 +48,26 @@ function matchesPattern(url: string, pattern: string): boolean {
 }
 
 /** Check whether a capability is allowed under the current active rule. Fail-closed. */
-function isActionAllowed(capability: string, url: string): { allowed: boolean; reason: string } {
-  if (!activeRule || !activeRule.isActive) {
+export function isActionAllowed(
+  capability: string,
+  url: string,
+  rule: InterceptorRule | null = activeRule
+): { allowed: boolean; reason: string } {
+  if (!rule || !rule.isActive) {
     return { allowed: false, reason: 'No active delegation rule' };
   }
-  if (activeRule.expiresAt && new Date(activeRule.expiresAt).getTime() < Date.now()) {
+  if (rule.expiresAt && new Date(rule.expiresAt).getTime() < Date.now()) {
     return { allowed: false, reason: 'Delegation has expired' };
   }
 
   // Blocked site patterns take precedence
-  for (const p of activeRule.sitePatterns) {
+  for (const p of rule.sitePatterns) {
     if (matchesPattern(url, p.pattern) && p.action === 'block') {
       return { allowed: false, reason: `Site blocked by pattern: ${p.pattern}` };
     }
   }
 
-  const restriction = activeRule.actionRestrictions.find((r) => r.capability === capability);
+  const restriction = rule.actionRestrictions.find((r) => r.capability === capability);
   if (!restriction) {
     return { allowed: false, reason: `Capability '${capability}' not permitted` };
   }
