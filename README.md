@@ -3,7 +3,7 @@
 # AI Browser Guard
 
 [![Build](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-112%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
+[![Tests](https://img.shields.io/badge/tests-239%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/)
 
@@ -113,7 +113,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed diagrams and [docs
 npm install          # Install dependencies
 npm run build        # TypeScript check + build to dist/
 npm run dev          # Watch mode for development
-npm run test         # Run test suite (112 tests)
+npm run test         # Run test suite (239 tests)
 npm run test:watch   # Run tests in watch mode
 npm run lint         # TypeScript strict type checking
 ```

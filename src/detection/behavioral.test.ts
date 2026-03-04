@@ -108,15 +108,16 @@ describe('analyzeClickPrecision', () => {
   });
 
   it('reports human-like for varied click positions', () => {
-    const clicks = [];
-    for (let i = 0; i < 10; i++) {
-      clicks.push({
-        clientX: 100 + (Math.random() - 0.5) * 10,
-        clientY: 100 + (Math.random() - 0.5) * 10,
-        targetRect: { x: 90, y: 90, width: 20, height: 20 },
-        timestamp: i * 100,
-      });
-    }
+    // Deterministic offsets guarantee stdDev > 2 and meanOffset > 3,
+    // so the automation detector always returns false. Avoids Math.random() flakiness.
+    const xOffsets = [3, -4, 5, -3, 6, -5, 4, -6, 3, -4];
+    const yOffsets = [-3, 5, -4, 6, -5, 3, -6, 4, -3, 5];
+    const clicks = xOffsets.map((dx, i) => ({
+      clientX: 100 + dx,
+      clientY: 100 + yOffsets[i],
+      targetRect: { x: 90, y: 90, width: 20, height: 20 },
+      timestamp: i * 100,
+    }));
     const result = analyzeClickPrecision(clicks);
     expect(result.detected).toBe(false);
   });
