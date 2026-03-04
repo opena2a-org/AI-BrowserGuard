@@ -16,6 +16,7 @@
 const MSG_INIT = 'AI_GUARD:INIT';
 const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
+const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
 
 interface InterceptorRule {
   isActive: boolean;
@@ -26,6 +27,27 @@ interface InterceptorRule {
 
 let activeRule: InterceptorRule | null = null;
 let guardNonce: string | null = null;
+
+/**
+ * One-time overrides granted via the "Allow once" notification button.
+ * Each entry is a `${capability}:${url}` key. The interceptors check this
+ * set before enforcing the active rule, and consume (remove) the entry on
+ * first use so that the exception applies exactly once.
+ */
+const allowedOnce: Set<string> = new Set();
+
+/**
+ * Returns true and removes the entry if a one-time override exists for this
+ * capability + url combination.
+ */
+function consumeAllowedOnce(capability: string, url: string): boolean {
+  const key = `${capability}:${url}`;
+  if (allowedOnce.has(key)) {
+    allowedOnce.delete(key);
+    return true;
+  }
+  return false;
+}
 
 /** Glob-style URL pattern matching (mirrors monitor.ts matchSitePattern). */
 function matchesPattern(url: string, pattern: string): boolean {
@@ -105,6 +127,16 @@ window.addEventListener('message', (e: MessageEvent) => {
   if (e.data.type === MSG_RULE_UPDATE) {
     if (!guardNonce || e.data.nonce !== guardNonce) return; // reject unsigned messages
     activeRule = (e.data.rule as InterceptorRule | null) ?? null;
+    return;
+  }
+
+  if (e.data.type === MSG_ALLOW_ONCE) {
+    if (!guardNonce || e.data.nonce !== guardNonce) return; // reject unsigned messages
+    const capability = e.data.capability as string;
+    const url = e.data.url as string;
+    if (capability && url) {
+      allowedOnce.add(`${capability}:${url}`);
+    }
   }
 });
 
@@ -116,6 +148,7 @@ window.open = function (
   features?: string
 ): Window | null {
   const urlStr = url?.toString() ?? window.location.href;
+  if (consumeAllowedOnce('open-tab', urlStr)) return _originalOpen(url, target, features);
   const { allowed, reason } = isActionAllowed('open-tab', urlStr);
   reportAction('open-tab', urlStr, !allowed, reason);
   if (!allowed) return null;
@@ -126,6 +159,7 @@ window.open = function (
 const _originalFormSubmit = HTMLFormElement.prototype.submit;
 HTMLFormElement.prototype.submit = function (this: HTMLFormElement): void {
   const url = this.action || window.location.href;
+  if (consumeAllowedOnce('submit-form', url)) { _originalFormSubmit.call(this); return; }
   const { allowed, reason } = isActionAllowed('submit-form', url);
   reportAction('submit-form', url, !allowed, reason);
   if (!allowed) return;
@@ -140,6 +174,7 @@ history.pushState = function (
   url?: string | URL | null
 ): void {
   const urlStr = url?.toString() ?? window.location.href;
+  if (consumeAllowedOnce('navigate', urlStr)) { _originalPushState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);
   reportAction('navigate', urlStr, !allowed, reason);
   if (!allowed) return;
@@ -154,6 +189,7 @@ history.replaceState = function (
   url?: string | URL | null
 ): void {
   const urlStr = url?.toString() ?? window.location.href;
+  if (consumeAllowedOnce('navigate', urlStr)) { _originalReplaceState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);
   reportAction('navigate', urlStr, !allowed, reason);
   if (!allowed) return;
@@ -179,6 +215,7 @@ if (nav) {
   nav.addEventListener('navigate', (e: NavigateEvent) => {
     if (e.isTrusted) return; // user-initiated navigation — do not intercept
     const url = e.destination?.url ?? window.location.href;
+    if (consumeAllowedOnce('navigate', url)) return;
     const { allowed, reason } = isActionAllowed('navigate', url);
     reportAction('navigate', url, !allowed, reason);
     if (!allowed) {

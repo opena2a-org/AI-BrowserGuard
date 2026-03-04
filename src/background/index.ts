@@ -15,9 +15,9 @@ import { createTimelineEvent, appendEventToSession } from '../session/timeline';
 import { executeBackgroundKillSwitch, createInitialKillSwitchState } from '../killswitch/index';
 import type { KillSwitchState } from '../killswitch/index';
 import { isTimeBoundExpired } from '../delegation/rules';
-import { setupNotificationHandlers, showBoundaryNotification, clearAllNotifications } from '../alerts/notification';
-import { createBoundaryAlert } from '../alerts/boundary';
+import { setupNotificationHandlers, clearAllNotifications } from '../alerts/notification';
 import type { BoundaryAlert } from '../alerts/boundary';
+import { processBoundaryViolation, handleAllowOnce } from './handlers';
 
 interface BackgroundState {
   activeAgents: Map<number, AgentIdentity>;
@@ -68,8 +68,7 @@ function initialize(): void {
 
   // Notification handlers
   setupNotificationHandlers((notificationId) => {
-    // Handle "Allow once" clicks - future enhancement
-    console.log('[AI Browser Guard] Override requested for notification:', notificationId);
+    handleAllowOnce(notificationId).catch(() => { /* ignore */ });
   });
 
   console.log('[AI Browser Guard] Background service worker initialized');
@@ -273,14 +272,14 @@ function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryV
   const activeRule = state.delegationRules.find((r) => r.isActive);
   if (!activeRule) return;
 
-  const alert = createBoundaryAlert(violation, activeRule);
+  // processBoundaryViolation creates the alert, shows the notification, stores the pending
+  // override, and logs the timeline event.
+  const alert = processBoundaryViolation(tabId, violation, activeRule, state.activeSessions);
+
   state.recentAlerts.push(alert);
   if (state.recentAlerts.length > 20) {
     state.recentAlerts.shift();
   }
-
-  // Fire Chrome notification for the violation
-  showBoundaryNotification(alert);
 
   // Update lifetime stats
   state.lifetimeStats = {
@@ -288,21 +287,6 @@ function handleBoundaryViolation(tabId: number | undefined, violation: BoundaryV
     totalActionsBlocked: state.lifetimeStats.totalActionsBlocked + 1,
   };
   updateLifetimeStats(() => state.lifetimeStats).catch(() => { /* non-critical */ });
-
-  // Log the violation as a timeline event if we have a session
-  if (tabId !== undefined) {
-    const sessionId = state.activeSessions.get(tabId);
-    if (sessionId) {
-      const event = createTimelineEvent('boundary-violation', violation.url,
-        `Violation: ${violation.attemptedAction} blocked`, {
-          attemptedAction: violation.attemptedAction,
-          outcome: 'blocked',
-          ruleId: violation.blockingRuleId,
-          targetSelector: violation.targetSelector,
-        });
-      updateSession(sessionId, (session) => appendEventToSession(session, event)).catch(() => { /* ignore */ });
-    }
-  }
 }
 
 async function handleDelegationUpdate(rule: DelegationRule): Promise<void> {

@@ -161,7 +161,8 @@ export type MessageType =
   | 'SESSION_DATA'
   | 'STATUS_QUERY'
   | 'STATUS_RESPONSE'
-  | 'SETTINGS_UPDATE';
+  | 'SETTINGS_UPDATE'
+  | 'ALLOW_ONCE';
 
 /**
  * Typed message payload for inter-component communication.
