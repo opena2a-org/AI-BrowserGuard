@@ -17,6 +17,7 @@ const GUARD_NONCE = crypto.randomUUID();
 const MSG_INIT = 'AI_GUARD:INIT';
 const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
+const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
 
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
@@ -185,6 +186,17 @@ function handleMessage(
         agentId: currentAgentId,
         monitorState: state,
       });
+      return false;
+    }
+
+    case 'ALLOW_ONCE': {
+      const { capability, url } = message.data as { capability: string; url: string };
+      // Relay the allow-once signal to the MAIN world interceptor via postMessage.
+      window.postMessage(
+        { type: MSG_ALLOW_ONCE, nonce: GUARD_NONCE, capability, url },
+        '*'
+      );
+      sendResponse({ success: true });
       return false;
     }
 
