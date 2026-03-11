@@ -54,7 +54,7 @@ ABOUT OPENA2A
 
 AI Browser Guard is built by OpenA2A, an open-source security platform building infrastructure for the AI agent ecosystem. AI agents are already making decisions, calling APIs, and accessing production data — without identity, visibility, or accountability. One compromised or misaligned agent can silently exfiltrate data, escalate privileges, or delete critical systems, and most organizations won't notice until damage is done.
 
-OpenA2A builds the tools to close that gap. 11 npm packages published, 8,300+ monthly downloads, 6 security PRs accepted into OpenClaw (205K+ stars), and 2,500+ lines of security code merged into projects used by millions. Our ecosystem includes:
+OpenA2A builds the tools to close that gap. 4 npm packages published, 6 security PRs accepted into OpenClaw (205K+ stars), and 2,500+ lines of security code merged into projects used by millions. Our ecosystem includes:
 
 - AIM (Agent Identity Management) — Cryptographic identity, trust scoring, capability-based access control
 - HackMyAgent — 147+ security checks, 75 adversarial attack payloads, OASB compliance scoring
@@ -90,17 +90,11 @@ English
 
 ## Permission Justifications
 
-### activeTab
-Required to detect automation frameworks on the current page and enforce delegation rules.
-
 ### storage
 Required to persist session logs, delegation rules, and user settings locally on the device.
 
 ### alarms
 Required to schedule periodic checks for delegation rule expiration and detection sweeps.
-
-### tabs
-Required to detect agent activity across tabs, broadcast kill switch commands to all tabs, and track navigation for the session timeline.
 
 ### notifications
 Required to alert the user when an AI agent attempts an action that violates the active delegation rules.

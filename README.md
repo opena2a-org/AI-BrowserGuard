@@ -13,7 +13,9 @@ AI agents in your terminal cannot read browser cookies directly, but they can re
 
 Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
 
-[Website](https://opena2a.org/aibrowserguard) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf)
+
+[Install from Chrome Web Store](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf) | [Website](https://opena2a.org/aibrowserguard) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
 
 | Detection | Delegation Wizard | Read-Only Config | Kill Switch |
 |:---------:|:-----------------:|:----------------:|:-----------:|
@@ -21,7 +23,13 @@ Chrome extension that detects, monitors, and controls AI agents operating in you
 
 ---
 
-## Quick Start
+## Install
+
+**From the Chrome Web Store (recommended):**
+
+[Install AI Browser Guard](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf) -- one click, automatic updates.
+
+**From source (for development):**
 
 ```bash
 git clone https://github.com/opena2a-org/AI-BrowserGuard.git
@@ -174,10 +182,8 @@ The full privacy policy is available at [opena2a.org/aibrowserguard/privacy](htt
 
 | Permission | Reason |
 |------------|--------|
-| `activeTab` | Access current tab for agent detection |
 | `storage` | Persist sessions, rules, and settings locally |
 | `alarms` | Delegation expiration timers |
-| `tabs` | Monitor tab lifecycle for session tracking |
 | `notifications` | Boundary violation alerts |
 | `<all_urls>` | Detect agents on any page the user visits |
 
