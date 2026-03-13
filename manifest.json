@@ -3,7 +3,7 @@
   "name": "AI Browser Guard",
   "version": "0.1.1",
   "description": "Detect, monitor, and control AI agents operating in your browser",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms", "notifications", "debugger"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "dist/background/index.js",

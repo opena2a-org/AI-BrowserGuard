@@ -7,6 +7,31 @@
 
 import type { AgentType, DetectionMethod, DetectionConfidence } from '../types/agent';
 
+/** Cached WebGL renderer string. Avoids creating new contexts on every sweep. */
+let cachedWebGLRenderer: string | null | undefined;
+
+function getCachedWebGLRenderer(): string | null {
+  if (cachedWebGLRenderer !== undefined) return cachedWebGLRenderer;
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl');
+    if (gl) {
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (debugInfo) {
+        cachedWebGLRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string;
+        // Explicitly lose context to free GPU resources
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        return cachedWebGLRenderer;
+      }
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch {
+    // Ignore WebGL errors
+  }
+  cachedWebGLRenderer = null;
+  return null;
+}
+
 export interface FrameworkDetectionResult {
   detected: boolean;
   frameworkType: AgentType;
@@ -159,22 +184,13 @@ export function detectGenericAutomation(): FrameworkDetectionResult {
     signals.chromePresent = false;
   }
 
-  // Check WebGL renderer for headless indicators
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl');
-    if (gl) {
-      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-      if (debugInfo) {
-        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-        signals.webglRenderer = renderer;
-        if (typeof renderer === 'string' && (renderer.includes('SwiftShader') || renderer.includes('llvmpipe'))) {
-          indicators.push('software renderer (headless indicator)');
-        }
-      }
+  // Check WebGL renderer for headless indicators (cached to avoid WebGL context leaks)
+  const webglResult = getCachedWebGLRenderer();
+  if (webglResult !== null) {
+    signals.webglRenderer = webglResult;
+    if (webglResult.includes('SwiftShader') || webglResult.includes('llvmpipe')) {
+      indicators.push('software renderer (headless indicator)');
     }
-  } catch {
-    // Ignore WebGL errors
   }
 
   const detected = indicators.length >= 2;

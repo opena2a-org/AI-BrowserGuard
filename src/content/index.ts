@@ -18,6 +18,7 @@ const MSG_INIT = 'AI_GUARD:INIT';
 const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
 const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
+const MSG_CDP_DETECTED = 'AI_GUARD:CDP_DETECTED';
 
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
@@ -46,9 +47,57 @@ function initialize(): void {
   // Introduce ourselves to the MAIN world interceptor with our nonce
   window.postMessage({ type: MSG_INIT, nonce: GUARD_NONCE }, '*');
 
-  // Receive action reports from the MAIN world interceptor
+  // Receive action reports and CDP detection from the MAIN world interceptor
   window.addEventListener('message', (e: MessageEvent) => {
     if (e.source !== window || !e.data) return;
+
+    // Handle CDP automation detection from the MAIN world stack trace trap
+    if (e.data.type === MSG_CDP_DETECTED) {
+      // The MAIN world interceptor detected automation via stack trace analysis.
+      // Create a detection event and forward it to the background.
+      const { framework, detail, signals, timestamp } = e.data as {
+        framework: string;
+        detail: string;
+        signals: Record<string, unknown>;
+        timestamp: string;
+      };
+
+      const agentTypeMap: Record<string, import('../types/agent').AgentType> = {
+        playwright: 'playwright',
+        puppeteer: 'puppeteer',
+        selenium: 'selenium',
+        'anthropic-computer-use': 'anthropic-computer-use',
+        'openai-operator': 'openai-operator',
+      };
+      const agentType = agentTypeMap[framework] ?? 'cdp-generic';
+
+      const agent: import('../types/agent').AgentIdentity = {
+        id: crypto.randomUUID(),
+        type: agentType,
+        detectionMethods: ['framework-fingerprint'],
+        confidence: 'confirmed',
+        detectedAt: timestamp ?? new Date().toISOString(),
+        originUrl: window.location.href,
+        observedCapabilities: [],
+        isActive: true,
+      };
+
+      currentAgentId = agent.id;
+
+      const event: import('../types/events').DetectionEvent = {
+        id: crypto.randomUUID(),
+        timestamp: timestamp ?? new Date().toISOString(),
+        methods: ['framework-fingerprint'],
+        confidence: 'confirmed',
+        agent,
+        url: window.location.href,
+        signals: { ...signals, source: 'stack-trace-trap', detail },
+      };
+
+      sendToBackground('DETECTION_RESULT', event).catch(() => { /* ignore */ });
+      return;
+    }
+
     if (e.data.type !== MSG_ACTION) return;
     if (!e.data.nonce || e.data.nonce !== GUARD_NONCE) return;
 

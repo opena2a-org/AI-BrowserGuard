@@ -18,6 +18,8 @@ import { isTimeBoundExpired } from '../delegation/rules';
 import { setupNotificationHandlers, clearAllNotifications } from '../alerts/notification';
 import type { BoundaryAlert } from '../alerts/boundary';
 import { processBoundaryViolation, handleAllowOnce } from './handlers';
+import { monitorDebuggerAttachment } from '../detection/cdp-debugger';
+import type { DebuggerDetectionResult } from '../detection/cdp-debugger';
 
 interface BackgroundState {
   activeAgents: Map<number, AgentIdentity>;
@@ -70,6 +72,13 @@ function initialize(): void {
   setupNotificationHandlers((notificationId) => {
     handleAllowOnce(notificationId).catch(() => { /* ignore */ });
   });
+
+  // CDP debugger attachment monitor — detects Playwright, Puppeteer, etc.
+  monitorDebuggerAttachment((result) => {
+    handleCdpDebuggerDetection(result).catch((err) => {
+      console.error('[AI Browser Guard] CDP detection handler error:', err);
+    });
+  }, 3000);
 
   console.log('[AI Browser Guard] Background service worker initialized');
 }
@@ -190,6 +199,24 @@ function handleMessage(
         sendResponse({ success: false });
       });
       return true;
+    }
+
+    case 'CDP_DEBUGGER_CHECK': {
+      // Content script is asking us to check for CDP debugger attachment.
+      // This is used as a secondary detection path — the content script
+      // detects stack trace anomalies, then asks the background to confirm
+      // via the chrome.debugger API.
+      (async () => {
+        const { detectDebuggerAttachment } = await import('../detection/cdp-debugger');
+        const result = await detectDebuggerAttachment();
+        sendResponse({ detected: result.detected, result });
+        if (result.detected && tabId !== undefined) {
+          await handleCdpDebuggerDetection(result);
+        }
+      })().catch(() => {
+        sendResponse({ detected: false });
+      });
+      return true; // async response
     }
 
     default:
@@ -386,6 +413,49 @@ function updateBadge(): void {
     chrome.action.setBadgeText({ text: '' });
   } catch {
     // Badge API may not be available in all contexts
+  }
+}
+
+/**
+ * Handle CDP debugger attachment detected from the background monitor.
+ *
+ * When chrome.debugger.getTargets() finds targets with attached debuggers,
+ * this creates detection events for the affected tabs and notifies their
+ * content scripts.
+ */
+async function handleCdpDebuggerDetection(result: DebuggerDetectionResult): Promise<void> {
+  // Create a detection event for each affected tab
+  for (const target of result.targets) {
+    const tabId = target.tabId;
+    if (tabId === undefined) continue;
+
+    // Skip if we already have an active agent for this tab
+    if (state.activeAgents.has(tabId)) continue;
+
+    const event: DetectionEvent = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      methods: ['cdp-connection'],
+      confidence: result.confidence,
+      agent: {
+        id: crypto.randomUUID(),
+        type: result.inferredFramework,
+        detectionMethods: ['cdp-connection'],
+        confidence: result.confidence,
+        detectedAt: new Date().toISOString(),
+        originUrl: target.url,
+        observedCapabilities: [],
+        isActive: true,
+      },
+      url: target.url,
+      signals: {
+        debuggerAttached: true,
+        targetType: target.type,
+        inferredFramework: result.inferredFramework,
+      },
+    };
+
+    await handleDetection(tabId, event);
   }
 }
 
