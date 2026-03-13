@@ -220,7 +220,7 @@ function renderDetectionPanel(): void {
 
     const badge = document.createElement('span');
     badge.className = 'severity-badge severity-badge-high';
-    badge.textContent = `Confidence: ${agent.confidence}`;
+    badge.textContent = 'DETECTED';
 
     headerRow.appendChild(name);
     headerRow.appendChild(badge);
