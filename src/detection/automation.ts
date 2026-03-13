@@ -42,91 +42,142 @@ export interface FrameworkDetectionResult {
 }
 
 /**
- * Detect Anthropic Computer Use agent patterns.
+ * Detect Anthropic Computer Use agent environment.
  *
- * Anthropic Computer Use operates via screenshot + click patterns
- * with pixel-perfect coordinates and fixed inference timing.
+ * Anthropic Computer Use operates at the OS level via xdotool (X11 input
+ * simulation) and gnome-screenshot. It does NOT use CDP, does NOT inject
+ * JavaScript globals, and does NOT set navigator.webdriver.
+ *
+ * Detection relies on environment fingerprinting: the reference implementation
+ * runs in a Docker container with Xvfb (virtual display), software-rendered
+ * WebGL (llvmpipe/Mesa), and a characteristic screen resolution (1024x768 or
+ * 1280x800). These are heuristic signals — they indicate a virtual environment
+ * consistent with Computer Use, not a definitive detection.
+ *
+ * Verified via Anthropic's open-source reference implementation:
+ * https://github.com/anthropics/claude-quickstarts/tree/main/computer-use-demo
  */
 export function detectAnthropicComputerUse(): FrameworkDetectionResult {
   const signals: Record<string, unknown> = {};
-  const found: string[] = [];
+  const indicators: string[] = [];
 
-  // Check for Computer Use-specific injected globals
-  const markers = [
-    '__anthropic_computer_use__',
-    '__computer_use__',
-    '__anthropic_tool__',
-  ];
-  for (const marker of markers) {
-    if (marker in window) {
-      found.push(marker);
-      signals[marker] = true;
+  // Computer Use runs in Xvfb with software rendering (llvmpipe or Mesa).
+  // This is detectable via WebGL renderer string.
+  const renderer = getCachedWebGLRenderer();
+  if (renderer !== null) {
+    signals.webglRenderer = renderer;
+    if (renderer.includes('llvmpipe') || renderer.includes('Mesa')) {
+      indicators.push('software renderer (llvmpipe/Mesa — virtual display indicator)');
     }
   }
 
-  // Check for screenshot API overrides (canvas.toDataURL, getDisplayMedia)
-  try {
-    const canvasProto = HTMLCanvasElement.prototype;
-    const toDataURLDesc = Object.getOwnPropertyDescriptor(canvasProto, 'toDataURL');
-    if (toDataURLDesc && !toDataURLDesc.writable && toDataURLDesc.configurable) {
-      signals.toDataURLModified = true;
-    }
-  } catch {
-    // Ignore
+  // Reference implementation uses XGA (1024x768) or WXGA (1280x800).
+  // These are uncommon on modern hardware and characteristic of Xvfb.
+  const screenW = window.screen?.width ?? 0;
+  const screenH = window.screen?.height ?? 0;
+  signals.screenWidth = screenW;
+  signals.screenHeight = screenH;
+  if ((screenW === 1024 && screenH === 768) || (screenW === 1280 && screenH === 800)) {
+    indicators.push(`characteristic screen resolution (${screenW}x${screenH})`);
   }
+
+  // Linux platform with non-headless browser is the reference environment.
+  // (Xvfb + Mutter + Firefox/Chrome inside Docker on Linux)
+  const platform = navigator.platform ?? '';
+  signals.platform = platform;
+  if (platform.startsWith('Linux')) {
+    indicators.push('Linux platform');
+  }
+
+  // Require at least 2 indicators to reduce false positives
+  // (a real Linux user with a 1024x768 monitor should not trigger this)
+  const detected = indicators.length >= 2;
 
   return {
-    detected: found.length > 0,
-    frameworkType: 'anthropic-computer-use',
-    method: 'framework-fingerprint',
-    confidence: found.length > 0 ? 'high' : 'low',
-    detail: found.length > 0
-      ? `Anthropic Computer Use indicators: ${found.join(', ')}.`
-      : 'No Anthropic Computer Use indicators detected.',
+    detected,
+    frameworkType: detected ? 'anthropic-computer-use' : 'unknown',
+    method: 'automation-flag',
+    confidence: detected ? 'medium' : 'low',
+    detail: detected
+      ? `Environment consistent with Anthropic Computer Use: ${indicators.join(', ')}.`
+      : 'No Anthropic Computer Use environment indicators detected.',
     signals,
   };
 }
 
 /**
- * Detect OpenAI Operator agent patterns.
+ * Detect OpenAI Operator agent environment.
+ *
+ * OpenAI Operator uses Playwright under the hood to control a cloud-hosted
+ * Chromium instance on Azure infrastructure. It does NOT send a custom user
+ * agent string (unlike ChatGPT-User bot).
+ *
+ * Detection relies on:
+ * 1. CDP/Playwright detection (handled by chrome.debugger and stack trace
+ *    modules — if Playwright is detected, Operator is a possible source)
+ * 2. Environment fingerprinting: Linux platform, datacenter-like WebGL
+ *    renderer, homogeneous browser fingerprint across sessions
+ *
+ * The Playwright-level detection is the primary mechanism (Layers 1 & 2).
+ * This function provides supplementary environment signals.
+ *
+ * Sources: OpenAI CUA sample app (github.com/openai/openai-cua-sample-app),
+ * CHEQ research on Operator fingerprinting, Stytch bot detection analysis.
  */
 export function detectOpenAIOperator(): FrameworkDetectionResult {
   const signals: Record<string, unknown> = {};
   const found: string[] = [];
 
-  // Check for Operator-specific globals
-  const markers = [
-    '__openai_operator__',
-    '__operator_runtime__',
-    '__openai_browser_tool__',
-  ];
-  for (const marker of markers) {
-    if (marker in window) {
-      found.push(marker);
-      signals[marker] = true;
-    }
+  // Operator runs on Linux in Azure cloud VMs.
+  // Combined with Playwright detection (from other layers), this
+  // strengthens the Operator attribution.
+  const platform = navigator.platform ?? '';
+  signals.platform = platform;
+  if (platform.startsWith('Linux')) {
+    found.push('Linux platform');
   }
 
-  // Check for modified user agent indicating custom Chromium
+  // Check user agent for any OpenAI/Operator identification.
+  // As of 2025, Operator does NOT self-identify, but future versions might.
   const ua = navigator.userAgent;
   if (ua.includes('Operator') || ua.includes('OpenAI')) {
     found.push('userAgent');
     signals.userAgent = ua;
   }
 
-  // Check for accessibility tree query patterns
-  if (typeof Element !== 'undefined' && 'getComputedAccessibleNode' in Element.prototype) {
-    signals.accessibilityAPI = true;
+  // Operator's Chromium has a homogeneous fingerprint: same browser version,
+  // no variation in plugins. Low plugin count is a weak signal.
+  try {
+    const pluginCount = navigator.plugins?.length ?? -1;
+    signals.pluginCount = pluginCount;
+    if (pluginCount === 0) {
+      found.push('zero browser plugins');
+    }
+  } catch {
+    // Ignore
   }
 
+  // Software-rendered WebGL in a cloud VM
+  const renderer = getCachedWebGLRenderer();
+  if (renderer !== null) {
+    signals.webglRenderer = renderer;
+    if (renderer.includes('SwiftShader') || renderer.includes('llvmpipe')
+        || renderer.includes('ANGLE') && renderer.includes('Google')) {
+      found.push('cloud/VM WebGL renderer');
+    }
+  }
+
+  // Require at least 2 signals for detection to reduce false positives
+  const detected = found.length >= 2;
+
   return {
-    detected: found.length > 0,
-    frameworkType: 'openai-operator',
-    method: 'framework-fingerprint',
-    confidence: found.length > 0 ? 'high' : 'low',
-    detail: found.length > 0
-      ? `OpenAI Operator indicators: ${found.join(', ')}.`
-      : 'No OpenAI Operator indicators detected.',
+    detected,
+    frameworkType: detected ? 'openai-operator' : 'unknown',
+    method: 'automation-flag',
+    confidence: detected ? 'medium' : 'low',
+    detail: detected
+      ? `Environment consistent with OpenAI Operator: ${found.join(', ')}.`
+      : 'No OpenAI Operator environment indicators detected.',
     signals,
   };
 }

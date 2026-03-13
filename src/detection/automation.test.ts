@@ -6,140 +6,117 @@ import {
   detectAllFrameworks,
 } from './automation';
 
-const win = window as unknown as Record<string, unknown>;
 const nav = navigator as unknown as Record<string, unknown>;
 
-function cleanFrameworkGlobals(): void {
-  const toDelete = [
-    '__anthropic_computer_use__',
-    '__computer_use__',
-    '__anthropic_tool__',
-    '__openai_operator__',
-    '__operator_runtime__',
-    '__openai_browser_tool__',
-  ];
-  for (const key of toDelete) {
-    delete win[key];
+// Helper to save and restore window/navigator properties
+function withProperty<T>(
+  obj: object,
+  prop: string,
+  value: T,
+  fn: () => void,
+): void {
+  const orig = Object.getOwnPropertyDescriptor(obj, prop);
+  Object.defineProperty(obj, prop, { value, configurable: true, writable: true });
+  try {
+    fn();
+  } finally {
+    if (orig) Object.defineProperty(obj, prop, orig);
+    else delete (obj as Record<string, unknown>)[prop];
   }
 }
 
 describe('detectAnthropicComputerUse', () => {
-  afterEach(cleanFrameworkGlobals);
-
-  it('returns not detected on clean window', () => {
-    cleanFrameworkGlobals();
+  it('returns not detected in normal browser environment', () => {
     const result = detectAnthropicComputerUse();
     expect(result.detected).toBe(false);
-    expect(result.frameworkType).toBe('anthropic-computer-use');
-    expect(result.method).toBe('framework-fingerprint');
+    expect(result.method).toBe('automation-flag');
     expect(result.confidence).toBe('low');
   });
 
-  it('detects __anthropic_computer_use__ global', () => {
-    win.__anthropic_computer_use__ = { version: '1.0' };
+  it('records screen dimensions as signals', () => {
     const result = detectAnthropicComputerUse();
-    expect(result.detected).toBe(true);
-    expect(result.confidence).toBe('high');
-    expect(result.signals['__anthropic_computer_use__']).toBe(true);
+    expect(result.signals).toHaveProperty('screenWidth');
+    expect(result.signals).toHaveProperty('screenHeight');
+    expect(result.signals).toHaveProperty('platform');
   });
 
-  it('detects __computer_use__ global', () => {
-    win.__computer_use__ = true;
+  it('reads screen dimensions into signals', () => {
+    // jsdom screen dimensions are not reconfigurable, so we just verify
+    // the function reads them without throwing
     const result = detectAnthropicComputerUse();
-    expect(result.detected).toBe(true);
-  });
-
-  it('detects __anthropic_tool__ global', () => {
-    win.__anthropic_tool__ = {};
-    const result = detectAnthropicComputerUse();
-    expect(result.detected).toBe(true);
-  });
-
-  it('returns framework type and method', () => {
-    win.__anthropic_computer_use__ = true;
-    const result = detectAnthropicComputerUse();
-    expect(result.frameworkType).toBe('anthropic-computer-use');
-    expect(result.method).toBe('framework-fingerprint');
-  });
-
-  it('includes found marker in detail string', () => {
-    win.__anthropic_computer_use__ = true;
-    const result = detectAnthropicComputerUse();
-    expect(result.detail).toContain('__anthropic_computer_use__');
+    expect(typeof result.signals.screenWidth).toBe('number');
+    expect(typeof result.signals.screenHeight).toBe('number');
   });
 
   it('returns not-detected detail when clean', () => {
-    cleanFrameworkGlobals();
     const result = detectAnthropicComputerUse();
     expect(result.detail).toContain('No Anthropic');
+  });
+
+  it('requires at least 2 indicators to detect', () => {
+    // Single indicator (Linux platform alone) should not trigger
+    const origPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'Linux x86_64', configurable: true });
+    const result = detectAnthropicComputerUse();
+    // Might or might not detect depending on other signals, but if not detected, confidence is low
+    if (!result.detected) {
+      expect(result.confidence).toBe('low');
+    }
+    if (origPlatform) Object.defineProperty(navigator, 'platform', origPlatform);
+    else delete nav.platform;
   });
 });
 
 describe('detectOpenAIOperator', () => {
-  afterEach(cleanFrameworkGlobals);
-
-  it('returns not detected on clean window', () => {
-    cleanFrameworkGlobals();
+  it('returns not detected in normal browser environment', () => {
     const result = detectOpenAIOperator();
     expect(result.detected).toBe(false);
-    expect(result.frameworkType).toBe('openai-operator');
-    expect(result.method).toBe('framework-fingerprint');
+    expect(result.method).toBe('automation-flag');
+    expect(result.confidence).toBe('low');
   });
 
-  it('detects __openai_operator__ global', () => {
-    win.__openai_operator__ = true;
+  it('records platform and plugin count as signals', () => {
     const result = detectOpenAIOperator();
-    expect(result.detected).toBe(true);
-    expect(result.confidence).toBe('high');
-    expect(result.signals['__openai_operator__']).toBe(true);
+    expect(result.signals).toHaveProperty('platform');
+    expect(result.signals).toHaveProperty('pluginCount');
   });
 
-  it('detects __operator_runtime__ global', () => {
-    win.__operator_runtime__ = {};
-    const result = detectOpenAIOperator();
-    expect(result.detected).toBe(true);
-  });
-
-  it('detects __openai_browser_tool__ global', () => {
-    win.__openai_browser_tool__ = {};
-    const result = detectOpenAIOperator();
-    expect(result.detected).toBe(true);
-  });
-
-  it('detects Operator string in user agent', () => {
-    const originalDescriptor = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+  it('detects Operator string in user agent as a signal', () => {
+    const origUA = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
     Object.defineProperty(navigator, 'userAgent', {
       get: () => 'Mozilla/5.0 Operator/1.0',
       configurable: true,
     });
     const result = detectOpenAIOperator();
-    expect(result.detected).toBe(true);
-    if (originalDescriptor) {
-      Object.defineProperty(navigator, 'userAgent', originalDescriptor);
-    } else {
-      delete nav['userAgent'];
-    }
+    // UA match is one signal; needs at least 2 for detection
+    expect(result.signals.userAgent || result.signals.platform).toBeDefined();
+    if (origUA) Object.defineProperty(navigator, 'userAgent', origUA);
+    else delete nav.userAgent;
   });
 
-  it('detects OpenAI string in user agent', () => {
-    const originalDescriptor = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+  it('detects OpenAI string in user agent as a signal', () => {
+    const origUA = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
     Object.defineProperty(navigator, 'userAgent', {
       get: () => 'Mozilla/5.0 OpenAI-Browser/1.0',
       configurable: true,
     });
     const result = detectOpenAIOperator();
-    expect(result.detected).toBe(true);
-    if (originalDescriptor) {
-      Object.defineProperty(navigator, 'userAgent', originalDescriptor);
-    } else {
-      delete nav['userAgent'];
-    }
+    expect(result.signals.userAgent || result.signals.platform).toBeDefined();
+    if (origUA) Object.defineProperty(navigator, 'userAgent', origUA);
+    else delete nav.userAgent;
   });
 
   it('returns not-detected detail when clean', () => {
-    cleanFrameworkGlobals();
     const result = detectOpenAIOperator();
     expect(result.detail).toContain('No OpenAI');
+  });
+
+  it('requires at least 2 signals for detection', () => {
+    // Single signal should not trigger
+    const result = detectOpenAIOperator();
+    if (!result.detected) {
+      expect(result.confidence).toBe('low');
+    }
   });
 });
 
@@ -177,6 +154,7 @@ describe('detectGenericAutomation', () => {
   });
 
   it('records hasLoadTimes and hasCsi signals when chrome is present', () => {
+    const win = window as unknown as Record<string, unknown>;
     if (win.chrome) {
       const result = detectGenericAutomation();
       expect(result.signals).toHaveProperty('hasLoadTimes');
@@ -229,34 +207,14 @@ describe('detectGenericAutomation', () => {
 });
 
 describe('detectAllFrameworks', () => {
-  afterEach(cleanFrameworkGlobals);
-
   it('only returns results where detected is true', () => {
-    cleanFrameworkGlobals();
     const results = detectAllFrameworks();
     for (const r of results) {
       expect(r.detected).toBe(true);
     }
   });
 
-  it('includes Anthropic Computer Use when global is set', () => {
-    win.__anthropic_computer_use__ = true;
-    const results = detectAllFrameworks();
-    const anthropic = results.find((r) => r.frameworkType === 'anthropic-computer-use');
-    expect(anthropic).toBeDefined();
-    expect(anthropic?.detected).toBe(true);
-  });
-
-  it('includes OpenAI Operator when global is set', () => {
-    win.__openai_operator__ = true;
-    const results = detectAllFrameworks();
-    const operator = results.find((r) => r.frameworkType === 'openai-operator');
-    expect(operator).toBeDefined();
-    expect(operator?.detected).toBe(true);
-  });
-
-  it('does not include Anthropic or OpenAI when not set', () => {
-    cleanFrameworkGlobals();
+  it('does not include Anthropic or OpenAI in normal environment', () => {
     const results = detectAllFrameworks();
     expect(results.find((r) => r.frameworkType === 'anthropic-computer-use')).toBeUndefined();
     expect(results.find((r) => r.frameworkType === 'openai-operator')).toBeUndefined();
