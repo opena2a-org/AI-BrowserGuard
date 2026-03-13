@@ -18,6 +18,18 @@ const root = resolve(__dirname, '..');
 
 const entries = ['content', 'interceptor', 'background', 'popup'];
 
+// Version consistency check: manifest.json and package.json must agree
+const manifestData = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf-8'));
+const packageData = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
+if (manifestData.version !== packageData.version) {
+  console.error(
+    `\nVersion mismatch: manifest.json has ${manifestData.version}, package.json has ${packageData.version}.` +
+    `\nUpdate both files to the same version before building.`
+  );
+  process.exit(1);
+}
+console.log(`Building AI Browser Guard v${manifestData.version}\n`);
+
 // Clean dist
 if (existsSync('dist')) {
   rmSync('dist', { recursive: true, force: true });

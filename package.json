@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit --strict",
-    "watch": "vite build --watch"
+    "watch": "vite build --watch",
+    "bump": "node scripts/bump-version.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
