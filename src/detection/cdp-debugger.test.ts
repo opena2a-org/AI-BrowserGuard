@@ -1,0 +1,188 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { detectDebuggerAttachment, monitorDebuggerAttachment } from './cdp-debugger';
+
+// Mock chrome.debugger API
+const mockGetTargets = vi.fn();
+
+beforeEach(() => {
+  vi.stubGlobal('chrome', {
+    debugger: {
+      getTargets: mockGetTargets,
+    },
+    runtime: {
+      lastError: null,
+    },
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('detectDebuggerAttachment', () => {
+  it('returns not detected when no debugger API is available', async () => {
+    vi.stubGlobal('chrome', { runtime: {} });
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(false);
+    expect(result.detail).toContain('not available');
+  });
+
+  it('returns not detected when no targets have attached debuggers', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 'target-1', type: 'page', title: 'Example', url: 'https://example.com', attached: false },
+        { id: 'target-2', type: 'page', title: 'Test', url: 'https://test.com', attached: false },
+      ]);
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(false);
+    expect(result.targets).toHaveLength(0);
+  });
+
+  it('detects when a target has an attached debugger', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 'target-1', type: 'page', title: 'BofA', url: 'https://bankofamerica.com', attached: true, tabId: 42 },
+        { id: 'target-2', type: 'page', title: 'CNN', url: 'https://cnn.com', attached: false },
+      ]);
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(true);
+    expect(result.confidence).toBe('confirmed');
+    expect(result.targets).toHaveLength(1);
+    expect(result.targets[0].tabId).toBe(42);
+    expect(result.targets[0].url).toBe('https://bankofamerica.com');
+  });
+
+  it('infers Playwright when only page targets are attached', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 't1', type: 'page', title: 'Test', url: 'https://test.com', attached: true, tabId: 1 },
+      ]);
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(true);
+    expect(result.inferredFramework).toBe('playwright');
+  });
+
+  it('infers Puppeteer when browser target is attached', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 't1', type: 'browser', title: 'Chrome', url: '', attached: true },
+        { id: 't2', type: 'page', title: 'Test', url: 'https://test.com', attached: true, tabId: 1 },
+      ]);
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(true);
+    expect(result.inferredFramework).toBe('puppeteer');
+  });
+
+  it('detects multiple attached targets', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 't1', type: 'page', title: 'Tab 1', url: 'https://a.com', attached: true, tabId: 1 },
+        { id: 't2', type: 'page', title: 'Tab 2', url: 'https://b.com', attached: true, tabId: 2 },
+        { id: 't3', type: 'page', title: 'Tab 3', url: 'https://c.com', attached: false },
+      ]);
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(true);
+    expect(result.targets).toHaveLength(2);
+    expect(result.detail).toContain('2 target(s)');
+  });
+
+  it('handles chrome.runtime.lastError gracefully', async () => {
+    vi.stubGlobal('chrome', {
+      debugger: {
+        getTargets: (cb: (targets: unknown[]) => void) => {
+          // Simulate lastError
+          (chrome.runtime as Record<string, unknown>).lastError = { message: 'Permission denied' };
+          cb([]);
+        },
+      },
+      runtime: { lastError: null },
+    });
+
+    const result = await detectDebuggerAttachment();
+    expect(result.detected).toBe(false);
+  });
+});
+
+describe('monitorDebuggerAttachment', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('calls callback when debugger attachment is detected', async () => {
+    let callCount = 0;
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      callCount++;
+      if (callCount >= 2) {
+        // Second call: simulate debugger attachment
+        cb([
+          { id: 't1', type: 'page', title: 'Test', url: 'https://test.com', attached: true, tabId: 1 },
+        ]);
+      } else {
+        cb([]);
+      }
+    });
+
+    const onDetection = vi.fn();
+    const cleanup = monitorDebuggerAttachment(onDetection, 1000);
+
+    // Initial check (no detection)
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onDetection).not.toHaveBeenCalled();
+
+    // After interval (detection)
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onDetection).toHaveBeenCalledTimes(1);
+    expect(onDetection.mock.calls[0][0].detected).toBe(true);
+
+    cleanup();
+  });
+
+  it('does not double-report the same detection', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([
+        { id: 't1', type: 'page', title: 'Test', url: 'https://test.com', attached: true, tabId: 1 },
+      ]);
+    });
+
+    const onDetection = vi.fn();
+    const cleanup = monitorDebuggerAttachment(onDetection, 1000);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onDetection).toHaveBeenCalledTimes(1);
+
+    // Same state, same count — should not re-report
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onDetection).toHaveBeenCalledTimes(1);
+
+    cleanup();
+  });
+
+  it('stops monitoring when cleanup is called', async () => {
+    mockGetTargets.mockImplementation((cb: (targets: unknown[]) => void) => {
+      cb([]);
+    });
+
+    const onDetection = vi.fn();
+    const cleanup = monitorDebuggerAttachment(onDetection, 1000);
+
+    cleanup();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    // Should have been called only for the initial check
+    expect(mockGetTargets).toHaveBeenCalledTimes(1);
+  });
+});

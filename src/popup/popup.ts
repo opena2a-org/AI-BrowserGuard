@@ -41,6 +41,12 @@ let countdownIntervalId: ReturnType<typeof setInterval> | null = null;
 
 function initialize(): void {
   document.addEventListener('DOMContentLoaded', () => {
+    // Sync version from manifest to prevent hardcoded footer drift
+    const manifest = chrome.runtime.getManifest();
+    const footerText = document.querySelector('.footer-text');
+    if (footerText && manifest.version) {
+      footerText.textContent = `AI Browser Guard v${manifest.version}`;
+    }
     setupEventListeners();
     queryBackgroundStatus();
   });
@@ -214,7 +220,7 @@ function renderDetectionPanel(): void {
 
     const badge = document.createElement('span');
     badge.className = 'severity-badge severity-badge-high';
-    badge.textContent = `Confidence: ${agent.confidence}`;
+    badge.textContent = 'DETECTED';
 
     headerRow.appendChild(name);
     headerRow.appendChild(badge);

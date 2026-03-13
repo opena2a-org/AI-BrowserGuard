@@ -162,7 +162,8 @@ export type MessageType =
   | 'STATUS_QUERY'
   | 'STATUS_RESPONSE'
   | 'SETTINGS_UPDATE'
-  | 'ALLOW_ONCE';
+  | 'ALLOW_ONCE'
+  | 'CDP_DEBUGGER_CHECK';
 
 /**
  * Typed message payload for inter-component communication.

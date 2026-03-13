@@ -17,6 +17,7 @@ const MSG_INIT = 'AI_GUARD:INIT';
 const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
 const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
+const MSG_CDP_DETECTED = 'AI_GUARD:CDP_DETECTED';
 
 interface InterceptorRule {
   isActive: boolean;
@@ -128,6 +129,101 @@ function reportAction(
 // is treated as secure and the module proceeds normally.
 if (globalThis.isSecureContext !== false) {
 
+// ── CDP stack trace detection ────────────────────────────────────────────────
+// When automation frameworks (Playwright, Puppeteer) execute code via CDP's
+// Runtime.evaluate or Runtime.callFunctionOn, the V8 call stack contains
+// framework-specific signatures that cannot be hidden. We intercept
+// Error.prepareStackTrace to inspect structured call sites as they are created.
+
+/** Known stack trace patterns for automation frameworks. */
+const CDP_STACK_PATTERNS = [
+  { pattern: /UtilityScript/, framework: 'playwright' },
+  { pattern: /__puppeteer_evaluation_script__/, framework: 'puppeteer' },
+  { pattern: /pptr:/, framework: 'puppeteer' },
+  { pattern: /ExecutionContext\._evaluateInternal/, framework: 'puppeteer' },
+  // Selenium: ChromeDriver injects via callFunction wrapper
+  // Verified against real Selenium 4.41 + ChromeDriver 146 + Chrome 145
+  { pattern: /callFunction\b/, framework: 'selenium' },
+] as const;
+
+let cdpDetectionReported = false;
+
+/** Report a CDP detection to the isolated world content script. */
+function reportCdpDetection(framework: string, detail: string, signals: Record<string, unknown>): void {
+  if (cdpDetectionReported) return;
+  cdpDetectionReported = true;
+  window.postMessage({
+    type: MSG_CDP_DETECTED,
+    nonce: guardNonce,
+    framework,
+    detail,
+    signals,
+    timestamp: new Date().toISOString(),
+  }, '*');
+}
+
+/**
+ * Check the call stack of the CURRENT execution for CDP automation patterns.
+ * Call this from within intercepted API functions (window.open, form.submit, etc.)
+ * to detect if the call originated from CDP-evaluated code.
+ */
+function probeCallStack(): void {
+  if (cdpDetectionReported) return;
+  try {
+    const stack = new Error('__abg_probe__').stack ?? '';
+    for (const { pattern, framework } of CDP_STACK_PATTERNS) {
+      if (pattern.test(stack)) {
+        reportCdpDetection(framework, `Detected ${framework} via intercepted API call stack.`, {
+          stackSnippet: stack.substring(0, 500),
+        });
+        return;
+      }
+    }
+  } catch {
+    // Do not let probe errors affect page functionality
+  }
+}
+
+// Install Error.prepareStackTrace trap (V8-specific).
+// This intercepts ALL Error creation in the page context, allowing us to
+// detect CDP-evaluated code even when it doesn't call our intercepted APIs.
+const _originalPrepareStackTrace = (Error as unknown as Record<string, unknown>).prepareStackTrace as
+  ((err: Error, sites: NodeJS.CallSite[]) => string) | undefined;
+
+(Error as unknown as Record<string, unknown>).prepareStackTrace = function (
+  err: Error,
+  callSites: NodeJS.CallSite[],
+): string {
+  if (!cdpDetectionReported) {
+    try {
+      for (const site of callSites) {
+        const fnName = site.getFunctionName() ?? '';
+        const typeName = site.getTypeName() ?? '';
+        const fileName = site.getFileName() ?? '';
+        const combined = `${typeName}.${fnName} ${fileName}`;
+
+        for (const { pattern, framework } of CDP_STACK_PATTERNS) {
+          if (pattern.test(combined) || pattern.test(fnName) || pattern.test(typeName) || pattern.test(fileName)) {
+            reportCdpDetection(framework, `Detected ${framework} via Error.prepareStackTrace trap.`, {
+              typeName, fnName, fileName,
+            });
+            break;
+          }
+        }
+        if (cdpDetectionReported) break;
+      }
+    } catch {
+      // Never let inspection errors propagate
+    }
+  }
+
+  // Delegate to original or produce default format
+  if (_originalPrepareStackTrace) {
+    return _originalPrepareStackTrace(err, callSites);
+  }
+  return `${err}\n${callSites.map((s) => `    at ${s}`).join('\n')}`;
+};
+
 // Listen for messages from the isolated world
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window || !e.data) return;
@@ -160,6 +256,7 @@ window.open = function (
   target?: string,
   features?: string
 ): Window | null {
+  probeCallStack();
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('open-tab', urlStr)) return _originalOpen(url, target, features);
   const { allowed, reason } = isActionAllowed('open-tab', urlStr);
@@ -171,6 +268,7 @@ window.open = function (
 // ── HTMLFormElement.prototype.submit (bypasses the 'submit' DOM event) ──────
 const _originalFormSubmit = HTMLFormElement.prototype.submit;
 HTMLFormElement.prototype.submit = function (this: HTMLFormElement): void {
+  probeCallStack();
   const url = this.action || window.location.href;
   if (consumeAllowedOnce('submit-form', url)) { _originalFormSubmit.call(this); return; }
   const { allowed, reason } = isActionAllowed('submit-form', url);
@@ -186,6 +284,7 @@ history.pushState = function (
   unused: string,
   url?: string | URL | null
 ): void {
+  probeCallStack();
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('navigate', urlStr)) { _originalPushState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);
@@ -201,6 +300,7 @@ history.replaceState = function (
   unused: string,
   url?: string | URL | null
 ): void {
+  probeCallStack();
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('navigate', urlStr)) { _originalReplaceState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);
