@@ -196,6 +196,24 @@ describe('detectGenericAutomation', () => {
     if (origIW) Object.defineProperty(window, 'innerWidth', origIW);
   });
 
+  it('detects dimension equality (Selenium-style: outer === inner)', () => {
+    const origOW = Object.getOwnPropertyDescriptor(window, 'outerWidth');
+    const origOH = Object.getOwnPropertyDescriptor(window, 'outerHeight');
+    const origIW = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    const origIH = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+    // Simulate Selenium: outerWidth=innerWidth=1200, outerHeight=innerHeight=900
+    Object.defineProperty(window, 'outerWidth', { value: 1200, configurable: true, writable: true });
+    Object.defineProperty(window, 'outerHeight', { value: 900, configurable: true, writable: true });
+    Object.defineProperty(window, 'innerWidth', { value: 1200, configurable: true, writable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true, writable: true });
+    const result = detectGenericAutomation();
+    expect(result.detail).toContain('outer === inner');
+    if (origOW) Object.defineProperty(window, 'outerWidth', origOW);
+    if (origOH) Object.defineProperty(window, 'outerHeight', origOH);
+    if (origIW) Object.defineProperty(window, 'innerWidth', origIW);
+    if (origIH) Object.defineProperty(window, 'innerHeight', origIH);
+  });
+
   it('detects HeadlessChrome in user agent', () => {
     const origUA = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
     Object.defineProperty(navigator, 'userAgent', {

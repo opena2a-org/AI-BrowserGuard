@@ -189,6 +189,14 @@ export function detectGenericAutomation(): FrameworkDetectionResult {
     indicators.push('outer < inner dimension inversion (headless indicator)');
   }
 
+  // Dimension equality: outerWidth === innerWidth with non-zero values indicates
+  // no browser chrome (title bar, scrollbar). Selenium WebDriver exhibits this.
+  // Verified against real Selenium 4.41 + Chrome 145: outerWidth=innerWidth=1200.
+  if (window.outerWidth > 0 && window.outerWidth === window.innerWidth
+      && window.outerHeight > 0 && window.outerHeight === window.innerHeight) {
+    indicators.push('outer === inner dimensions (no browser chrome)');
+  }
+
   // HeadlessChrome in user agent: Puppeteer and headless Chromium include this
   // by default. Easy to spoof but still a useful corroborating signal.
   // Verified against real Puppeteer v24: "HeadlessChrome/145.0.0.0".

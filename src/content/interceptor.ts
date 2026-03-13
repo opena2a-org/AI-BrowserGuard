@@ -141,6 +141,9 @@ const CDP_STACK_PATTERNS = [
   { pattern: /__puppeteer_evaluation_script__/, framework: 'puppeteer' },
   { pattern: /pptr:/, framework: 'puppeteer' },
   { pattern: /ExecutionContext\._evaluateInternal/, framework: 'puppeteer' },
+  // Selenium: ChromeDriver injects via callFunction wrapper
+  // Verified against real Selenium 4.41 + ChromeDriver 146 + Chrome 145
+  { pattern: /callFunction\b/, framework: 'selenium' },
 ] as const;
 
 let cdpDetectionReported = false;

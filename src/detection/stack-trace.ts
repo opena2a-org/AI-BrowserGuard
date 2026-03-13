@@ -65,6 +65,22 @@ const FRAMEWORK_PATTERNS: Array<{
     confidence: 'high',
   },
   {
+    // Selenium WebDriver: executeScript injects via callFunction wrapper
+    // Verified against real Selenium 4.41 + ChromeDriver 146 + Chrome 145
+    pattern: /callFunction\b/,
+    framework: 'selenium',
+    label: 'Selenium callFunction',
+    confidence: 'high',
+  },
+  {
+    // Selenium WebDriver: executeScript appears in stack when running user JS
+    // Verified against real Selenium 4.41 + Chrome 145
+    pattern: /executeScript\b/,
+    framework: 'selenium',
+    label: 'Selenium executeScript',
+    confidence: 'medium',
+  },
+  {
     pattern: /eval at evaluate \((?:<anonymous>|:[\d]+:[\d]+)\)/,
     framework: 'cdp-generic',
     label: 'CDP Runtime.evaluate',
@@ -176,6 +192,20 @@ export function installStackTraceTrap(
               confidence: 'confirmed',
               frameworkType: 'puppeteer',
               detail: `Puppeteer detected: ${fileName} in call stack.`,
+              signals: { typeName, fnName, fileName },
+            });
+            break;
+          }
+
+          // Selenium: callFunction is the wrapper ChromeDriver uses for executeScript
+          if (fnName === 'callFunction' || fnName === 'executeScript') {
+            reported = true;
+            onDetection({
+              detected: true,
+              method: 'framework-fingerprint',
+              confidence: 'high',
+              frameworkType: 'selenium',
+              detail: `Selenium detected: ${fnName} in call stack.`,
               signals: { typeName, fnName, fileName },
             });
             break;
