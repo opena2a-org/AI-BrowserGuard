@@ -3,7 +3,7 @@
 # AI Browser Guard
 
 [![Build](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-239%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
+[![Tests](https://img.shields.io/badge/tests-259%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/)
 
@@ -11,7 +11,7 @@
 
 AI agents in your terminal cannot read browser cookies directly, but they can read cookie databases from disk. Browser Guard detects and controls AI access to browser sessions.
 
-Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
+Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator without requiring the agent to identify itself. Detection is verified against real framework instances. Provides an emergency kill switch, delegation rules, boundary violation alerts, and a session timeline.
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf)
 
@@ -69,7 +69,7 @@ Browser-based AI agents (Playwright, Puppeteer, Selenium, Anthropic Computer Use
 
 ## Features
 
-- **Agent Takeover Detection** -- Identifies automation frameworks through WebDriver flags, CDP connection markers, behavioral analysis (timing, click precision, typing patterns), and framework-specific fingerprinting. Works without requiring the agent to identify itself.
+- **Agent Takeover Detection** -- Three-layer detection: (1) CDP debugger monitoring via `chrome.debugger.getTargets()`, (2) V8 stack trace analysis for framework signatures (UtilityScript, pptr:, callFunction), (3) behavioral and environment fingerprinting (WebGL renderer, screen resolution, dimension anomalies). Works without requiring the agent to identify itself.
 - **Emergency Kill Switch** -- One-click termination of all agent connections. Revokes delegated permissions, clears automation flags, and terminates CDP sessions. Available via popup or keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K).
 - **Delegation Wizard** -- Define agent access boundaries before granting control. Three presets: Read-Only (navigate and read only), Limited (specific sites, time-bounded), and Full Access (unrestricted with logging). Supports site allowlists/blocklists with glob patterns.
 - **Boundary Violation Alerts** -- Fail-closed rule evaluation blocks unauthorized actions before they execute. Each violation generates a Chrome notification with details and a one-time override option.
@@ -79,15 +79,17 @@ Browser-based AI agents (Playwright, Puppeteer, Selenium, Anthropic Computer Use
 
 ## Detected Frameworks
 
-| Framework | Detection Method |
-|-----------|-----------------|
-| Playwright | CDP connection markers, framework-specific page.goto patterns |
-| Puppeteer | CDP protocol commands, browser.newPage signatures |
-| Selenium | `navigator.webdriver` flag, WebDriver protocol markers |
-| Anthropic Computer Use | Screenshot-then-click behavioral patterns, coordinate precision |
-| OpenAI Operator | Operator-specific DOM interaction signatures |
-| Generic CDP | Chrome DevTools Protocol connection without framework fingerprint |
-| Generic WebDriver | WebDriver flag set without framework fingerprint |
+Every detection method listed below has been verified against the real framework.
+
+| Framework | Detection Method | Verified Against |
+|-----------|-----------------|-----------------|
+| Playwright | CDP debugger attachment, `UtilityScript.evaluate` in V8 stack traces | Real Playwright MCP controlling Chrome |
+| Puppeteer | CDP debugger attachment, `pptr:evaluate` stack traces, `navigator.webdriver`, dimension inversion (outer < inner), HeadlessChrome UA | Real Puppeteer v24 + Chromium 145 |
+| Selenium | CDP debugger attachment, `callFunction`/`executeScript` stack traces, `navigator.webdriver`, dimension equality (outer === inner) | Real Selenium 4.41 + ChromeDriver 146 |
+| Anthropic Computer Use | Software WebGL renderer (llvmpipe/Mesa), Xvfb screen resolution (1024x768), Linux platform fingerprint | Real Anthropic Computer Use Docker reference implementation |
+| OpenAI Operator | Same as Playwright (Operator uses Playwright internally) + Linux/cloud environment signals | Playwright verification (Operator uses identical CDP stack) |
+| Generic CDP | `chrome.debugger.getTargets()` detects any attached CDP client | Any CDP-based framework |
+| Generic WebDriver | `navigator.webdriver` flag (W3C WebDriver spec requirement) | Puppeteer, Selenium |
 
 ---
 
@@ -105,7 +107,13 @@ Content Script (per tab)          Background Service Worker          Popup UI
         +-------- chrome.runtime.sendMessage --------+
 ```
 
-**Detection pipeline:** On every page load, the content script checks for CDP connections, WebDriver flags (`navigator.webdriver`), automation framework signatures, and behavioral anomalies (event timing, click precision, typing cadence). Results are sent to the background service worker for session management and badge updates.
+**Detection pipeline (three layers):**
+
+- **Layer 1 -- CDP debugger monitoring (background):** The background service worker polls `chrome.debugger.getTargets()` every 3 seconds to detect any attached CDP client. This catches Playwright, Puppeteer, Selenium 4+, and any other CDP-based framework regardless of stealth measures.
+- **Layer 2 -- V8 stack trace analysis (MAIN world):** A content script injected into the page's JavaScript context installs an `Error.prepareStackTrace` trap. When automation frameworks execute code via CDP `Runtime.evaluate`, the V8 call stack reveals framework-specific signatures (e.g., `UtilityScript` for Playwright, `pptr:` for Puppeteer, `callFunction` for Selenium).
+- **Layer 3 -- Behavioral and environment fingerprinting (content script):** Checks `navigator.webdriver`, window dimension anomalies, WebGL renderer (software rendering indicates virtual display), screen resolution, user agent strings, and Chrome API presence.
+
+Results from all layers are sent to the background service worker for session management and badge updates.
 
 **Delegation enforcement:** Every agent action is checked against the active delegation rule before execution. The rule engine evaluates site patterns (first-match-wins), action restrictions (default-deny), and time bounds. Actions that fail any check are blocked at the content script level.
 
@@ -121,7 +129,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed diagrams and [docs
 npm install          # Install dependencies
 npm run build        # TypeScript check + build to dist/
 npm run dev          # Watch mode for development
-npm run test         # Run test suite (239 tests)
+npm run test         # Run test suite (259 tests)
 npm run test:watch   # Run tests in watch mode
 npm run lint         # TypeScript strict type checking
 ```
@@ -185,6 +193,7 @@ The full privacy policy is available at [opena2a.org/aibrowserguard/privacy](htt
 | `storage` | Persist sessions, rules, and settings locally |
 | `alarms` | Delegation expiration timers |
 | `notifications` | Boundary violation alerts |
+| `debugger` | Detect CDP client attachments (Layer 1 detection) |
 | `<all_urls>` | Detect agents on any page the user visits |
 
 ---
