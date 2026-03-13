@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head><title>AI Browser Guard Detection Probe</title></head>
+<body>
+<h1>Detection Probe Results</h1>
+<pre id="results">Running detection checks...</pre>
+<script>
+// Run all the detection checks that AI Browser Guard uses
+const results = {};
+
+// 1. navigator.webdriver
+results.webdriver = navigator.webdriver;
+
+// 2. Screen dimensions
+results.screenWidth = screen.width;
+results.screenHeight = screen.height;
+results.outerWidth = window.outerWidth;
+results.outerHeight = window.outerHeight;
+results.innerWidth = window.innerWidth;
+results.innerHeight = window.innerHeight;
+results.dimensionInversion = window.outerWidth > 0 && window.outerWidth < window.innerWidth;
+results.dimensionEquality = window.outerWidth > 0 && window.outerWidth === window.innerWidth;
+
+// 3. Platform
+results.platform = navigator.platform;
+results.userAgent = navigator.userAgent;
+results.headlessChrome = navigator.userAgent.includes('HeadlessChrome');
+
+// 4. WebGL renderer
+try {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl');
+  if (gl) {
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+      results.webglVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+      results.webglRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      results.softwareRenderer = results.webglRenderer.includes('llvmpipe') ||
+        results.webglRenderer.includes('SwiftShader') ||
+        results.webglRenderer.includes('Mesa');
+    }
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+  } else {
+    results.webglRenderer = 'NOT_AVAILABLE';
+  }
+} catch(e) {
+  results.webglRenderer = 'ERROR: ' + e.message;
+}
+
+// 5. Chrome object
+results.hasChromeObj = !!window.chrome;
+if (window.chrome) {
+  results.hasLoadTimes = 'loadTimes' in window.chrome;
+  results.hasCsi = 'csi' in window.chrome;
+}
+
+// 6. Plugins
+results.pluginCount = navigator.plugins?.length ?? -1;
+results.plugins = Array.from(navigator.plugins || []).map(p => p.name);
+
+// 7. Languages
+results.languages = navigator.languages;
+
+// 8. Known automation globals
+const globals = [
+  '__anthropic_computer_use__', '__computer_use__', '__anthropic_tool__',
+  '__openai_operator__', '__operator_runtime__', '__openai_browser_tool__',
+  '__selenium_unwrapped', '__webdriver_evaluate', '__driver_evaluate',
+  '__webdriver_unwrapped', '__fxdriver_evaluate', '__lastWatirAlert',
+  'callPhantom', '_phantom', 'phantom', 'domAutomation', 'domAutomationController'
+];
+results.automationGlobals = {};
+for (const g of globals) {
+  if (g in window) results.automationGlobals[g] = true;
+}
+
+// 9. CDP connection check (can we detect debugger?)
+results.hasDebuggerAPI = !!(window.chrome && chrome.debugger);
+
+// 10. Characteristic Computer Use resolutions
+results.isXvfbResolution = (screen.width === 1024 && screen.height === 768) ||
+  (screen.width === 1280 && screen.height === 800) ||
+  (screen.width === 1366 && screen.height === 768);
+
+// Summary: which of our detection methods would fire?
+results.DETECTION_SUMMARY = {
+  'Layer 3 - Software renderer': results.softwareRenderer || false,
+  'Layer 3 - Xvfb resolution': results.isXvfbResolution,
+  'Layer 3 - Linux platform': results.platform?.startsWith('Linux'),
+  'Layer 3 - HeadlessChrome UA': results.headlessChrome,
+  'Layer 3 - webdriver flag': results.webdriver,
+  'Layer 3 - Dimension inversion': results.dimensionInversion,
+  'Layer 3 - Dimension equality': results.dimensionEquality,
+  'Layer 3 - Zero outer dims': results.outerWidth === 0 && results.outerHeight === 0,
+  'Layer 3 - Automation globals': Object.keys(results.automationGlobals).length > 0,
+};
+
+// Count how many signals fire
+const fired = Object.entries(results.DETECTION_SUMMARY).filter(([,v]) => v);
+results.SIGNALS_FIRED = fired.length;
+results.WOULD_DETECT = fired.length >= 2;
+results.FIRED_SIGNALS = fired.map(([k]) => k);
+
+document.getElementById('results').textContent = JSON.stringify(results, null, 2);
+</script>
+</body>
+</html>
