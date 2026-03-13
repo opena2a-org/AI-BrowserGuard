@@ -172,10 +172,29 @@ export function detectGenericAutomation(): FrameworkDetectionResult {
   }
 
   // Check screen dimensions vs viewport for headless
+  signals.outerWidth = window.outerWidth;
+  signals.outerHeight = window.outerHeight;
+  signals.innerWidth = window.innerWidth;
+  signals.innerHeight = window.innerHeight;
+
   if (window.outerWidth === 0 && window.outerHeight === 0) {
     indicators.push('zero outer dimensions');
-    signals.outerWidth = window.outerWidth;
-    signals.outerHeight = window.outerHeight;
+  }
+
+  // Dimension inversion: outerWidth < innerWidth is physically impossible in a real
+  // browser window (outer includes title bar + chrome). Headless Puppeteer/Chromium
+  // exhibits this because it doesn't render window chrome.
+  // Verified against real Puppeteer v24: outerWidth=756, innerWidth=800.
+  if (window.outerWidth > 0 && window.outerWidth < window.innerWidth) {
+    indicators.push('outer < inner dimension inversion (headless indicator)');
+  }
+
+  // HeadlessChrome in user agent: Puppeteer and headless Chromium include this
+  // by default. Easy to spoof but still a useful corroborating signal.
+  // Verified against real Puppeteer v24: "HeadlessChrome/145.0.0.0".
+  if (navigator.userAgent.includes('HeadlessChrome')) {
+    indicators.push('HeadlessChrome in user agent');
+    signals.userAgent = navigator.userAgent;
   }
 
   // Check for missing browser-specific APIs

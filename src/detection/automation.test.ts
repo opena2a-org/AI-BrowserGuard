@@ -183,6 +183,31 @@ describe('detectGenericAutomation', () => {
       expect(result.signals).toHaveProperty('hasCsi');
     }
   });
+
+  it('detects dimension inversion (outer < inner)', () => {
+    const origOW = Object.getOwnPropertyDescriptor(window, 'outerWidth');
+    const origIW = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    // Simulate Puppeteer headless: outerWidth=756, innerWidth=800
+    Object.defineProperty(window, 'outerWidth', { value: 756, configurable: true, writable: true });
+    Object.defineProperty(window, 'innerWidth', { value: 800, configurable: true, writable: true });
+    const result = detectGenericAutomation();
+    expect(result.detail).toContain('dimension inversion');
+    if (origOW) Object.defineProperty(window, 'outerWidth', origOW);
+    if (origIW) Object.defineProperty(window, 'innerWidth', origIW);
+  });
+
+  it('detects HeadlessChrome in user agent', () => {
+    const origUA = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.0.0 Safari/537.36',
+      configurable: true,
+      writable: true,
+    });
+    const result = detectGenericAutomation();
+    expect(result.detail).toContain('HeadlessChrome');
+    if (origUA) Object.defineProperty(navigator, 'userAgent', origUA);
+    else delete (nav as Record<string, unknown>).userAgent;
+  });
 });
 
 describe('detectAllFrameworks', () => {
