@@ -3,17 +3,17 @@ import { checkBoundary, matchSitePattern, isDelegationExpired } from './monitor'
 import { createRuleFromPreset } from '../delegation/rules';
 
 describe('checkBoundary', () => {
-  it('blocks when no rule is active (fail-closed)', () => {
+  it('allows when no rule is active (pass-through for normal browsing)', () => {
     const result = checkBoundary('click', 'https://example.com', null);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('No active delegation');
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toContain('pass-through');
   });
 
-  it('blocks when rule is inactive', () => {
+  it('allows when rule is inactive (pass-through)', () => {
     const rule = createRuleFromPreset('fullAccess');
     rule.isActive = false;
     const result = checkBoundary('click', 'https://example.com', rule);
-    expect(result.allowed).toBe(false);
+    expect(result.allowed).toBe(true);
   });
 
   it('allows permitted actions under active rule', () => {

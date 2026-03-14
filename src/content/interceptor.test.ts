@@ -203,23 +203,23 @@ describe('matchesPattern — full URL patterns (contain ://)', () => {
 
 // ── isActionAllowed ───────────────────────────────────────────────────────────
 
-describe('isActionAllowed — null / inactive rule (fail-closed)', () => {
-  it('blocks when rule is null', () => {
+describe('isActionAllowed — null / inactive rule (pass-through)', () => {
+  it('allows when rule is null (pass-through for normal browsing)', () => {
     const { allowed, reason } = isActionAllowed('navigate', 'https://example.com', null);
-    expect(allowed).toBe(false);
-    expect(reason).toContain('No active delegation');
+    expect(allowed).toBe(true);
+    expect(reason).toContain('pass-through');
   });
 
-  it('blocks when rule.isActive is false', () => {
+  it('allows when rule.isActive is false (pass-through)', () => {
     const rule = activeRule({ isActive: false });
     const { allowed } = isActionAllowed('navigate', 'https://example.com', rule);
-    expect(allowed).toBe(false);
+    expect(allowed).toBe(true);
   });
 
   it('includes a descriptive reason when rule is inactive', () => {
     const rule = activeRule({ isActive: false });
     const { reason } = isActionAllowed('navigate', 'https://example.com', rule);
-    expect(reason.length).toBeGreaterThan(0);
+    expect(reason).toContain('pass-through');
   });
 });
 
