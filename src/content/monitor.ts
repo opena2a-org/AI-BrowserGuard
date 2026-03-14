@@ -36,26 +36,29 @@ let monitorState: MonitorState = {
 
 /**
  * Check whether an agent action is permitted under delegation rules.
- * Fail-closed: no rule = blocked.
+ *
+ * Pass-through when no rule exists: normal browsing is never blocked.
+ * Fail-closed when a rule IS active: actions not explicitly permitted are blocked.
  */
 export function checkBoundary(
   action: AgentCapability,
   url: string,
   rule: DelegationRule | null
 ): BoundaryCheckResult {
+  // No rule → pass-through (normal browsing without agent delegation)
   if (!rule) {
     return {
-      allowed: false,
+      allowed: true,
       matchedRule: null,
-      reason: 'No active delegation rule. All actions are blocked by default.',
+      reason: 'No active delegation rule — pass-through.',
     };
   }
 
   if (!rule.isActive) {
     return {
-      allowed: false,
+      allowed: true,
       matchedRule: rule,
-      reason: 'Delegation rule is no longer active.',
+      reason: 'Delegation rule is inactive — pass-through.',
     };
   }
 

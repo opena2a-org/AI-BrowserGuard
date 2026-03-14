@@ -71,14 +71,22 @@ export function matchesPattern(url: string, pattern: string): boolean {
   }
 }
 
-/** Check whether a capability is allowed under the current active rule. Fail-closed. */
+/**
+ * Check whether a capability is allowed under the current active rule.
+ *
+ * Pass-through when no rule exists: normal browsing is never blocked.
+ * Fail-closed when a rule IS active: actions not explicitly permitted are blocked.
+ * This ensures the extension does not break sites (login, navigation) during
+ * normal use, while still enforcing boundaries when delegation is configured.
+ */
 export function isActionAllowed(
   capability: string,
   url: string,
   rule: InterceptorRule | null = activeRule
 ): { allowed: boolean; reason: string } {
+  // No active delegation rule → pass through (normal browsing, no agent delegation)
   if (!rule || !rule.isActive) {
-    return { allowed: false, reason: 'No active delegation rule' };
+    return { allowed: true, reason: 'No active delegation rule — pass-through' };
   }
   if (rule.expiresAt && new Date(rule.expiresAt).getTime() < Date.now()) {
     return { allowed: false, reason: 'Delegation has expired' };
