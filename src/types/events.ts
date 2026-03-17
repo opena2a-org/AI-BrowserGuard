@@ -163,7 +163,10 @@ export type MessageType =
   | 'STATUS_RESPONSE'
   | 'SETTINGS_UPDATE'
   | 'ALLOW_ONCE'
-  | 'CDP_DEBUGGER_CHECK';
+  | 'CDP_DEBUGGER_CHECK'
+  | 'NETWORK_EVENT'
+  | 'REPORTS_QUERY'
+  | 'REPORT_EXPORT';
 
 /**
  * Typed message payload for inter-component communication.

@@ -20,6 +20,11 @@ import type { BoundaryAlert } from '../alerts/boundary';
 import { processBoundaryViolation, handleAllowOnce } from './handlers';
 import { monitorDebuggerAttachment } from '../detection/cdp-debugger';
 import type { DebuggerDetectionResult } from '../detection/cdp-debugger';
+import { lookupAgentIdentity } from '../aim/client';
+import { lookupRegistryTrust } from '../registry/client';
+import { generateSessionReport, storeReport, getReports } from '../session/report';
+import type { SessionReport } from '../session/report';
+import type { NetworkEvent } from '../content/network-interceptor';
 
 interface BackgroundState {
   activeAgents: Map<number, AgentIdentity>;
@@ -201,6 +206,52 @@ function handleMessage(
       return true;
     }
 
+    case 'NETWORK_EVENT': {
+      if (tabId !== undefined) {
+        const networkEvent = message.data as NetworkEvent;
+        const netSessionId = state.activeSessions.get(tabId);
+        if (netSessionId) {
+          updateSession(netSessionId, (session) => {
+            const events = session.networkEvents ?? [];
+            // Keep last 200 network events per session
+            const updated = [...events, networkEvent];
+            if (updated.length > 200) {
+              updated.splice(0, updated.length - 200);
+            }
+            return { ...session, networkEvents: updated };
+          }).catch(() => { /* non-critical */ });
+        }
+      }
+      sendResponse({ success: true });
+      return false;
+    }
+
+    case 'REPORTS_QUERY': {
+      getReports().then((reports) => {
+        sendResponse({ reports });
+      }).catch(() => {
+        sendResponse({ reports: [] });
+      });
+      return true;
+    }
+
+    case 'REPORT_EXPORT': {
+      const { reportId } = message.data as { reportId: string };
+      (async () => {
+        const reports = await getReports();
+        const report = reports.find((r) => r.id === reportId);
+        if (report) {
+          const { exportReportAsJSON } = await import('../session/report');
+          sendResponse({ json: exportReportAsJSON(report) });
+        } else {
+          sendResponse({ json: null });
+        }
+      })().catch(() => {
+        sendResponse({ json: null });
+      });
+      return true;
+    }
+
     case 'CDP_DEBUGGER_CHECK': {
       // Content script is asking us to check for CDP debugger attachment.
       // This is used as a secondary detection path — the content script
@@ -268,6 +319,9 @@ async function handleDetection(tabId: number, event: DetectionEvent): Promise<vo
   await saveSession(updatedSession);
   state.activeSessions.set(tabId, updatedSession.id);
 
+  // AIM + Registry trust lookup (non-blocking)
+  enrichAgentTrust(tabId, event.agent).catch(() => { /* non-critical */ });
+
   // Log detection
   await appendDetectionLog(event);
 
@@ -284,6 +338,58 @@ async function handleDetection(tabId: number, event: DetectionEvent): Promise<vo
   updateLifetimeStats(() => state.lifetimeStats).catch(() => { /* non-critical */ });
 
   updateBadge();
+}
+
+/**
+ * Enrich an agent's identity with AIM and registry trust data.
+ * Updates the agent in activeAgents and the stored session.
+ */
+async function enrichAgentTrust(tabId: number, agent: AgentIdentity): Promise<void> {
+  const settings = (await getStorageState()).settings;
+  let aimScore: number | null = null;
+  let registryScore: number | null = null;
+
+  // AIM lookup
+  if (settings.aimLookupEnabled) {
+    const aimResult = await lookupAgentIdentity(agent.type, agent.originUrl, {
+      baseUrl: settings.aimBaseUrl,
+    });
+    if (aimResult) {
+      aimScore = aimResult.trustScore;
+      agent.label = aimResult.label;
+    }
+  }
+
+  // Registry lookup
+  if (settings.registryLookupEnabled) {
+    const registryResult = await lookupRegistryTrust(agent.type, {
+      baseUrl: settings.registryBaseUrl,
+    });
+    if (registryResult) {
+      registryScore = registryResult.trustScore;
+      if (!agent.label && registryResult.displayName) {
+        agent.label = registryResult.displayName;
+      }
+    }
+  }
+
+  // Combine scores: average of available scores
+  const scores = [aimScore, registryScore].filter((s): s is number => s !== null);
+  if (scores.length > 0) {
+    agent.trustScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+  }
+
+  // Update the agent in state
+  state.activeAgents.set(tabId, agent);
+
+  // Update the session agent
+  const sessionId = state.activeSessions.get(tabId);
+  if (sessionId) {
+    await updateSession(sessionId, (session) => ({
+      ...session,
+      agent: { ...agent },
+    }));
+  }
 }
 
 function handleAgentAction(tabId: number, event: AgentEvent): void {
@@ -372,13 +478,14 @@ async function executeKillSwitch(
   }
   await saveDelegationRules(state.delegationRules);
 
-  // End all active sessions
+  // End all active sessions and generate reports
   for (const [tabId, sessionId] of state.activeSessions.entries()) {
     await updateSession(sessionId, (session) => ({
       ...session,
       endedAt: new Date().toISOString(),
       endReason: 'kill-switch' as const,
     }));
+    await generateAndStoreReport(sessionId);
     state.activeSessions.delete(tabId);
   }
 
@@ -467,10 +574,28 @@ async function handleTabRemoved(tabId: number): Promise<void> {
       endedAt: new Date().toISOString(),
       endReason: 'page-unload' as const,
     }));
+    // Generate post-session report
+    await generateAndStoreReport(sessionId);
     state.activeSessions.delete(tabId);
   }
   state.activeAgents.delete(tabId);
   updateBadge();
+}
+
+/**
+ * Generate a report for a completed session and store it.
+ */
+async function generateAndStoreReport(sessionId: string): Promise<void> {
+  try {
+    const stored = await getStorageState();
+    const session = stored.sessions.find((s) => s.id === sessionId);
+    if (session && session.endedAt) {
+      const report = generateSessionReport(session);
+      await storeReport(report);
+    }
+  } catch {
+    // Report generation is non-critical
+  }
 }
 
 async function checkDelegationExpiration(): Promise<void> {
