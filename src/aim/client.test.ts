@@ -14,10 +14,11 @@ describe('lookupAgentIdentity', () => {
   it('returns AIM result on successful lookup', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         trustScore: 0.85,
-        label: 'Verified Playwright',
-        registered: true,
+        displayName: 'Verified Playwright',
+        name: 'playwright',
       }),
     });
 
@@ -31,9 +32,24 @@ describe('lookupAgentIdentity', () => {
     expect(result!.registered).toBe(true);
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch.mock.calls[0][0]).toContain('aim.test');
+    // Verify correct API path
+    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/sdk-api/agents/playwright');
   });
 
-  it('returns null on non-200 response', async () => {
+  it('returns unregistered result on 404', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    });
+
+    const result = await lookupAgentIdentity('unknown-agent', 'https://example.com');
+    expect(result).not.toBeNull();
+    expect(result!.trustScore).toBe(0);
+    expect(result!.label).toBe('unknown-agent');
+    expect(result!.registered).toBe(false);
+  });
+
+  it('returns null on non-200/non-404 response', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
@@ -53,10 +69,11 @@ describe('lookupAgentIdentity', () => {
   it('caches results for the same agent+origin', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         trustScore: 0.9,
-        label: 'Test',
-        registered: true,
+        displayName: 'Test',
+        name: 'playwright',
       }),
     });
 
@@ -71,10 +88,11 @@ describe('lookupAgentIdentity', () => {
   it('uses different cache keys for different agents', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         trustScore: 0.5,
-        label: 'Agent',
-        registered: true,
+        displayName: 'Agent',
+        name: 'agent',
       }),
     });
 
@@ -88,6 +106,7 @@ describe('lookupAgentIdentity', () => {
   it('handles malformed response data gracefully', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         // Missing expected fields
         unexpected: 'data',
@@ -98,16 +117,32 @@ describe('lookupAgentIdentity', () => {
     expect(result).not.toBeNull();
     expect(result!.trustScore).toBe(0);
     expect(result!.label).toBe('selenium');
-    expect(result!.registered).toBe(false);
+    expect(result!.registered).toBe(true); // 200 means registered
+  });
+
+  it('falls back to name when displayName is missing', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        trustScore: 0.7,
+        name: 'my-agent',
+      }),
+    });
+
+    const result = await lookupAgentIdentity('my-agent', 'https://example.com');
+    expect(result).not.toBeNull();
+    expect(result!.label).toBe('my-agent');
   });
 
   it('clears cache when clearAIMCache is called', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         trustScore: 0.5,
-        label: 'Test',
-        registered: true,
+        displayName: 'Test',
+        name: 'playwright',
       }),
     });
 
@@ -121,10 +156,11 @@ describe('lookupAgentIdentity', () => {
   it('re-fetches after cache is cleared', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({
         trustScore: 0.5,
-        label: 'Test',
-        registered: true,
+        displayName: 'Test',
+        name: 'playwright',
       }),
     });
 
@@ -133,5 +169,19 @@ describe('lookupAgentIdentity', () => {
     await lookupAgentIdentity('playwright', 'https://example.com');
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches 404 results to avoid repeated lookups', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    });
+
+    const result1 = await lookupAgentIdentity('missing', 'https://example.com');
+    const result2 = await lookupAgentIdentity('missing', 'https://example.com');
+
+    expect(result1).toEqual(result2);
+    expect(result1!.registered).toBe(false);
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 });

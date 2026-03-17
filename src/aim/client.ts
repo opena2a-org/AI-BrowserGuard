@@ -2,14 +2,18 @@
  * AIM (Agent Identity Management) API client.
  *
  * Performs lightweight lookups against an AIM server to retrieve
- * trust scores and labels for detected agents. Results are cached
- * in memory with a configurable TTL (default 5 minutes).
+ * trust scores and display names for detected agents. Results are
+ * cached in memory with a configurable TTL (default 5 minutes).
+ *
+ * Uses the SDK API endpoint GET /api/v1/sdk-api/agents/:identifier
+ * which accepts an agent name or UUID and returns the full agent
+ * record including trustScore and displayName.
  */
 
 export interface AIMResult {
   /** Trust score between 0.0 and 1.0. */
   trustScore: number;
-  /** Human-readable label for the agent. */
+  /** Human-readable display name for the agent. */
   label: string;
   /** Whether the agent is registered in AIM. */
   registered: boolean;
@@ -20,7 +24,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const DEFAULT_AIM_BASE_URL = 'https://aim.opena2a.org';
+const DEFAULT_AIM_BASE_URL = 'http://localhost:8080';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const cache = new Map<string, CacheEntry>();
@@ -35,8 +39,13 @@ function cacheKey(agentType: string, origin: string): string {
 /**
  * Look up an agent's identity and trust score from AIM.
  *
- * Returns null on any failure (network error, timeout, non-200 response)
- * so callers can fall back gracefully.
+ * Calls GET /api/v1/sdk-api/agents/:identifier where identifier
+ * is the agent type (name). The AIM server returns a full Agent
+ * object with trustScore (float64) and displayName (string).
+ *
+ * Returns null on any failure (network error, timeout, non-200
+ * response) so callers can fall back gracefully. A 404 means the
+ * agent is not registered; the result reflects that.
  */
 export async function lookupAgentIdentity(
   agentType: string,
@@ -55,27 +64,41 @@ export async function lookupAgentIdentity(
   }
 
   try {
-    const url = `${baseUrl}/api/agents/lookup?type=${encodeURIComponent(agentType)}&origin=${encodeURIComponent(origin)}`;
+    const url = `${baseUrl}/api/v1/sdk-api/agents/${encodeURIComponent(agentType)}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000),
     });
 
+    if (response.status === 404) {
+      // Agent not registered in AIM
+      const result: AIMResult = {
+        trustScore: 0,
+        label: agentType,
+        registered: false,
+      };
+      cache.set(key, { result, expiresAt: Date.now() + ttl });
+      return result;
+    }
+
     if (!response.ok) {
       return null;
     }
 
+    // AIM Agent response shape: { trustScore: number, displayName: string, name: string, ... }
     const data = await response.json() as {
       trustScore?: number;
-      label?: string;
-      registered?: boolean;
+      displayName?: string;
+      name?: string;
     };
 
     const result: AIMResult = {
       trustScore: typeof data.trustScore === 'number' ? data.trustScore : 0,
-      label: typeof data.label === 'string' ? data.label : agentType,
-      registered: typeof data.registered === 'boolean' ? data.registered : false,
+      label: typeof data.displayName === 'string' ? data.displayName
+        : typeof data.name === 'string' ? data.name
+        : agentType,
+      registered: true,
     };
 
     // Store in cache

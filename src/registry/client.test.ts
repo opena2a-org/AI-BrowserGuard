@@ -11,15 +11,15 @@ beforeEach(() => {
 });
 
 describe('lookupRegistryTrust', () => {
-  it('returns registry result for a registered agent', async () => {
+  it('returns registry result for a verified package (trustLevel 4)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({
-        classification: 'trusted',
-        trustScore: 0.92,
+      json: () => Promise.resolve([{
+        trustLevel: 4,
         displayName: 'Official Playwright',
-      }),
+        name: 'playwright',
+      }]),
     });
 
     const result = await lookupRegistryTrust('playwright', {
@@ -28,9 +28,61 @@ describe('lookupRegistryTrust', () => {
 
     expect(result).not.toBeNull();
     expect(result!.classification).toBe('trusted');
-    expect(result!.trustScore).toBe(0.92);
+    expect(result!.trustScore).toBe(0.9);
     expect(result!.registered).toBe(true);
     expect(result!.displayName).toBe('Official Playwright');
+    // Verify correct API path
+    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/registry/search?q=playwright');
+  });
+
+  it('returns known classification for scanned package (trustLevel 3)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([{
+        trustLevel: 3,
+        displayName: 'Scanned Agent',
+        name: 'scanned-agent',
+      }]),
+    });
+
+    const result = await lookupRegistryTrust('scanned-agent');
+    expect(result).not.toBeNull();
+    expect(result!.classification).toBe('known');
+    expect(result!.trustScore).toBe(0.6);
+    expect(result!.registered).toBe(true);
+  });
+
+  it('returns known classification for listed package (trustLevel 2)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([{
+        trustLevel: 2,
+        name: 'listed-agent',
+      }]),
+    });
+
+    const result = await lookupRegistryTrust('listed-agent');
+    expect(result).not.toBeNull();
+    expect(result!.classification).toBe('known');
+    expect(result!.trustScore).toBe(0.6);
+  });
+
+  it('returns untrusted classification for blocked package (trustLevel 0)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([{
+        trustLevel: 0,
+        name: 'blocked-agent',
+      }]),
+    });
+
+    const result = await lookupRegistryTrust('blocked-agent');
+    expect(result).not.toBeNull();
+    expect(result!.classification).toBe('untrusted');
+    expect(result!.trustScore).toBe(0.1);
   });
 
   it('returns unknown classification for 404 (unregistered agent)', async () => {
@@ -48,6 +100,19 @@ describe('lookupRegistryTrust', () => {
     expect(result!.trustScore).toBe(0.3);
     expect(result!.registered).toBe(false);
     expect(result!.displayName).toBeNull();
+  });
+
+  it('returns unknown for empty search results', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([]),
+    });
+
+    const result = await lookupRegistryTrust('nonexistent-agent');
+    expect(result).not.toBeNull();
+    expect(result!.classification).toBe('unknown');
+    expect(result!.registered).toBe(false);
   });
 
   it('returns null on server error (non-404)', async () => {
@@ -71,10 +136,11 @@ describe('lookupRegistryTrust', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({
-        classification: 'known',
+      json: () => Promise.resolve([{
+        trustLevel: 3,
         displayName: 'Test Agent',
-      }),
+        name: 'playwright',
+      }]),
     });
 
     await lookupRegistryTrust('playwright');
@@ -84,62 +150,67 @@ describe('lookupRegistryTrust', () => {
     expect(getRegistryCacheSize()).toBe(1);
   });
 
-  it('uses default trust score when classification is present but score is missing', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        classification: 'untrusted',
-      }),
-    });
-
-    const result = await lookupRegistryTrust('malicious-bot');
-    expect(result).not.toBeNull();
-    expect(result!.trustScore).toBe(0.1); // untrusted default
-  });
-
-  it('maps classification strings to correct scores', async () => {
-    const cases: Array<{ classification: string; expectedScore: number }> = [
-      { classification: 'trusted', expectedScore: 0.9 },
-      { classification: 'known', expectedScore: 0.6 },
-      { classification: 'unknown', expectedScore: 0.3 },
-      { classification: 'untrusted', expectedScore: 0.1 },
+  it('maps all trustLevel values correctly', async () => {
+    const cases: Array<{ trustLevel: number; expectedClassification: string; expectedScore: number }> = [
+      { trustLevel: 0, expectedClassification: 'untrusted', expectedScore: 0.1 },
+      { trustLevel: 1, expectedClassification: 'untrusted', expectedScore: 0.1 },
+      { trustLevel: 2, expectedClassification: 'known', expectedScore: 0.6 },
+      { trustLevel: 3, expectedClassification: 'known', expectedScore: 0.6 },
+      { trustLevel: 4, expectedClassification: 'trusted', expectedScore: 0.9 },
     ];
 
-    for (const { classification, expectedScore } of cases) {
+    for (const { trustLevel, expectedClassification, expectedScore } of cases) {
       clearRegistryCache();
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ classification }),
+        json: () => Promise.resolve([{ trustLevel, name: 'test' }]),
       });
 
       const result = await lookupRegistryTrust('test-agent');
       expect(result).not.toBeNull();
+      expect(result!.classification).toBe(expectedClassification);
       expect(result!.trustScore).toBe(expectedScore);
     }
   });
 
-  it('handles unrecognized classification as unknown', async () => {
+  it('handles single object response (non-array)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: () => Promise.resolve({
-        classification: 'INVALID_VALUE',
+        trustLevel: 4,
+        displayName: 'Direct Lookup',
+        name: 'test-agent',
       }),
     });
 
     const result = await lookupRegistryTrust('test-agent');
     expect(result).not.toBeNull();
-    expect(result!.classification).toBe('unknown');
-    expect(result!.trustScore).toBe(0.3);
+    expect(result!.classification).toBe('trusted');
+    expect(result!.displayName).toBe('Direct Lookup');
+  });
+
+  it('falls back to name when displayName is missing', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([{
+        trustLevel: 3,
+        name: 'my-agent',
+      }]),
+    });
+
+    const result = await lookupRegistryTrust('my-agent');
+    expect(result).not.toBeNull();
+    expect(result!.displayName).toBe('my-agent');
   });
 
   it('clears cache correctly', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ classification: 'known' }),
+      json: () => Promise.resolve([{ trustLevel: 3, name: 'playwright' }]),
     });
 
     await lookupRegistryTrust('playwright');
