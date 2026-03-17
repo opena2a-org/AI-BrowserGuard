@@ -9,6 +9,7 @@ import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
 import type { AgentSession, LifetimeStats } from '../session/types';
 import type { BoundaryAlert } from '../alerts/boundary';
+import type { SessionReport } from '../session/report';
 import { createInitialWizardState, renderWizard } from '../delegation/wizard';
 import type { WizardState } from '../delegation/wizard';
 import { createRuleFromPreset } from '../delegation/rules';
@@ -22,6 +23,10 @@ interface PopupState {
   wizardState: WizardState | null;
   loading: boolean;
   lifetimeStats: LifetimeStats | null;
+  reports: SessionReport[];
+  selectedReport: SessionReport | null;
+  selectedSessionForNetwork: AgentSession | null;
+  networkFilter: 'all' | 'agent' | 'user';
 }
 
 let popupState: PopupState = {
@@ -33,6 +38,10 @@ let popupState: PopupState = {
   wizardState: null,
   loading: true,
   lifetimeStats: null,
+  reports: [],
+  selectedReport: null,
+  selectedSessionForNetwork: null,
+  networkFilter: 'all',
 };
 
 // Holds the interval ID for the delegation countdown timer.
@@ -78,6 +87,17 @@ async function queryBackgroundStatus(): Promise<void> {
     if (sessionResponse && typeof sessionResponse === 'object') {
       const data = sessionResponse as { sessions?: AgentSession[] };
       popupState.sessions = data.sessions ?? [];
+    }
+  } catch {
+    // Ignore
+  }
+
+  // Also fetch reports
+  try {
+    const reportsResponse = await sendToBackground('REPORTS_QUERY', {});
+    if (reportsResponse && typeof reportsResponse === 'object') {
+      const data = reportsResponse as { reports?: SessionReport[] };
+      popupState.reports = data.reports ?? [];
     }
   } catch {
     // Ignore
@@ -189,6 +209,8 @@ function renderAll(): void {
   renderDelegationPanel();
   renderViolationsPanel();
   renderTimelinePanel();
+  renderReportsPanel();
+  renderNetworkPanel();
   renderMetricsPanel();
   renderStatusBadge();
 }
@@ -224,6 +246,31 @@ function renderDetectionPanel(): void {
 
     headerRow.appendChild(name);
     headerRow.appendChild(badge);
+
+    // Trust score badge (from AIM/Registry)
+    const trustBadge = document.createElement('span');
+    if (agent.trustScore !== undefined && agent.trustScore !== null) {
+      const score = agent.trustScore;
+      let trustColor: string;
+      let trustLabel: string;
+      if (score > 0.7) {
+        trustColor = '#22c55e'; // green
+        trustLabel = 'Trusted';
+      } else if (score >= 0.3) {
+        trustColor = '#f59e0b'; // yellow/amber
+        trustLabel = 'Known';
+      } else {
+        trustColor = '#ef4444'; // red
+        trustLabel = 'Untrusted';
+      }
+      trustBadge.style.cssText = `font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; color: white; background: ${trustColor}; margin-left: 4px;`;
+      trustBadge.textContent = `${trustLabel} (${score.toFixed(1)})`;
+      trustBadge.title = agent.label ?? `Trust: ${score}`;
+    } else {
+      trustBadge.style.cssText = 'font-size: 11px; font-weight: 500; color: var(--text-secondary); margin-left: 4px;';
+      trustBadge.textContent = 'AIM: N/A';
+    }
+    headerRow.appendChild(trustBadge);
 
     const metaRow = document.createElement('div');
     metaRow.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500;';
@@ -627,6 +674,241 @@ function renderTimelinePanel(): void {
     group.appendChild(header);
     group.appendChild(eventRows);
     container.appendChild(group);
+  }
+}
+
+function renderReportsPanel(): void {
+  let panel = document.getElementById('reports-panel');
+  if (!panel) {
+    // Create the reports panel dynamically if not in HTML
+    const metricsPanel = document.getElementById('metrics-panel');
+    if (!metricsPanel?.parentElement) return;
+    panel = document.createElement('div');
+    panel.id = 'reports-panel';
+    panel.className = 'panel';
+    panel.innerHTML = '<div class="panel-header"><h3>Session Reports</h3></div><div id="reports-list"></div>';
+    metricsPanel.parentElement.insertBefore(panel, metricsPanel);
+  }
+
+  const container = document.getElementById('reports-list');
+  if (!container) return;
+
+  if (popupState.reports.length === 0) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  container.innerHTML = '';
+
+  // Show report detail view if a report is selected
+  if (popupState.selectedReport) {
+    const report = popupState.selectedReport;
+
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn btn-secondary btn-sm';
+    backBtn.textContent = 'Back';
+    backBtn.style.cssText = 'margin-bottom: 8px;';
+    backBtn.addEventListener('click', () => {
+      popupState.selectedReport = null;
+      renderReportsPanel();
+    });
+    container.appendChild(backBtn);
+
+    const detail = document.createElement('div');
+    detail.style.cssText = 'font-size: 12px; line-height: 1.6;';
+
+    const lines = [
+      `Agent: ${formatAgentType(report.agentType)}`,
+      `Duration: ${report.durationSeconds !== null ? `${report.durationSeconds}s` : 'N/A'}`,
+      `End reason: ${report.endReason ?? 'N/A'}`,
+      `Actions: ${report.actionSummary.total} total, ${report.actionSummary.allowed} allowed, ${report.actionSummary.blocked} blocked`,
+      `Events: ${report.totalEvents}`,
+    ];
+
+    if (report.delegationRuleSummary) {
+      lines.push(`Delegation: ${report.delegationRuleSummary.preset}`);
+    }
+
+    if (Object.keys(report.violationsByCapability).length > 0) {
+      lines.push('Violations:');
+      for (const [cap, count] of Object.entries(report.violationsByCapability)) {
+        lines.push(`  ${cap}: ${count}`);
+      }
+    }
+
+    if (report.networkSummary) {
+      lines.push(`Network: ${report.networkSummary.totalRequests} requests (${report.networkSummary.agentInitiated} agent, ${report.networkSummary.uniqueDomains} domains)`);
+    }
+
+    detail.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+    container.appendChild(detail);
+
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'btn btn-secondary btn-sm';
+    exportBtn.textContent = 'Export JSON';
+    exportBtn.style.cssText = 'margin-top: 8px;';
+    exportBtn.addEventListener('click', () => {
+      const json = JSON.stringify(report, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${report.sessionId.substring(0, 8)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    container.appendChild(exportBtn);
+
+    return;
+  }
+
+  // Report list view
+  for (const report of popupState.reports.slice(0, 10)) {
+    const row = document.createElement('div');
+    row.className = 'event-item';
+    row.style.cssText = 'cursor: pointer;';
+
+    const body = document.createElement('div');
+    body.style.cssText = 'flex: 1; min-width: 0;';
+
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+    const agentLabel = document.createElement('span');
+    agentLabel.style.cssText = 'font-size: 13px; font-weight: 600;';
+    agentLabel.textContent = formatAgentType(report.agentType);
+
+    const dateLabel = document.createElement('span');
+    dateLabel.style.cssText = 'font-size: 11px; color: var(--text-secondary);';
+    dateLabel.textContent = formatTimestamp(report.startedAt);
+
+    topRow.appendChild(agentLabel);
+    topRow.appendChild(dateLabel);
+
+    const statsRow = document.createElement('div');
+    statsRow.style.cssText = 'font-size: 12px; color: var(--text-secondary); font-weight: 500;';
+    const duration = report.durationSeconds !== null ? `${report.durationSeconds}s` : 'N/A';
+    statsRow.textContent = `${report.actionSummary.total} actions, ${duration}`;
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display: flex; gap: 4px; margin-top: 4px;';
+
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn btn-secondary btn-sm';
+    viewBtn.textContent = 'View Report';
+    viewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      popupState.selectedReport = report;
+      renderReportsPanel();
+    });
+    btnRow.appendChild(viewBtn);
+
+    body.appendChild(topRow);
+    body.appendChild(statsRow);
+    body.appendChild(btnRow);
+    row.appendChild(body);
+    container.appendChild(row);
+  }
+}
+
+function renderNetworkPanel(): void {
+  let panel = document.getElementById('network-panel');
+
+  // Find a session with network events to display
+  const sessionWithNetwork = popupState.selectedSessionForNetwork
+    ?? popupState.sessions.find(s => s.networkEvents && s.networkEvents.length > 0)
+    ?? null;
+
+  if (!panel) {
+    const metricsPanel = document.getElementById('metrics-panel');
+    if (!metricsPanel?.parentElement) return;
+    panel = document.createElement('div');
+    panel.id = 'network-panel';
+    panel.className = 'panel';
+    panel.innerHTML = '<div class="panel-header"><h3>Network Activity</h3></div><div id="network-filters"></div><div id="network-list"></div>';
+    metricsPanel.parentElement.insertBefore(panel, metricsPanel);
+  }
+
+  const filtersContainer = document.getElementById('network-filters');
+  const container = document.getElementById('network-list');
+  if (!container || !filtersContainer) return;
+
+  const events = sessionWithNetwork?.networkEvents ?? [];
+  if (events.length === 0) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  panel.classList.remove('hidden');
+
+  // Render filter buttons
+  filtersContainer.innerHTML = '';
+  const filterRow = document.createElement('div');
+  filterRow.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px; padding: 0 8px;';
+
+  const filters: Array<{ label: string; value: 'all' | 'agent' | 'user' }> = [
+    { label: 'All', value: 'all' },
+    { label: 'Agent', value: 'agent' },
+    { label: 'User', value: 'user' },
+  ];
+
+  for (const filter of filters) {
+    const btn = document.createElement('button');
+    btn.className = `btn btn-sm ${popupState.networkFilter === filter.value ? 'btn-primary' : 'btn-secondary'}`;
+    btn.textContent = filter.label;
+    btn.addEventListener('click', () => {
+      popupState.networkFilter = filter.value;
+      renderNetworkPanel();
+    });
+    filterRow.appendChild(btn);
+  }
+  filtersContainer.appendChild(filterRow);
+
+  // Filter events
+  const filtered = popupState.networkFilter === 'all'
+    ? events
+    : events.filter(e => e.initiator === popupState.networkFilter);
+
+  container.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'placeholder-text-inline';
+    empty.textContent = 'No matching network events';
+    container.appendChild(empty);
+    return;
+  }
+
+  // Show last 50 events, newest first
+  const display = filtered.slice(-50).reverse();
+  for (const event of display) {
+    const row = document.createElement('div');
+    row.className = 'session-event-row';
+
+    const methodCell = document.createElement('span');
+    methodCell.style.cssText = 'font-size: 11px; font-weight: 700; width: 36px; flex-shrink: 0;';
+    methodCell.textContent = event.method;
+
+    const urlCell = document.createElement('span');
+    urlCell.style.cssText = 'font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+    urlCell.textContent = truncateUrl(event.url, 35);
+    urlCell.title = event.url;
+
+    const initiatorChip = document.createElement('span');
+    const chipClass = event.initiator === 'agent' ? 'outcome-chip-blocked' : 'outcome-chip-allowed';
+    initiatorChip.className = `outcome-chip ${chipClass}`;
+    initiatorChip.textContent = event.initiator;
+
+    const timeCell = document.createElement('span');
+    timeCell.style.cssText = 'font-size: 10px; color: var(--text-secondary); width: 55px; text-align: right; flex-shrink: 0;';
+    timeCell.textContent = formatTimestamp(event.timestamp);
+
+    row.appendChild(methodCell);
+    row.appendChild(urlCell);
+    row.appendChild(initiatorChip);
+    row.appendChild(timeCell);
+    container.appendChild(row);
   }
 }
 

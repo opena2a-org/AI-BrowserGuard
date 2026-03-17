@@ -8,6 +8,7 @@
 import type { AgentIdentity } from '../types/agent';
 import type { AgentEvent } from '../types/events';
 import type { DelegationRule } from '../types/delegation';
+import type { NetworkEvent } from '../content/network-interceptor';
 
 /**
  * A complete agent session with timeline of events.
@@ -37,6 +38,9 @@ export interface AgentSession {
 
   /** Summary statistics for quick display in popup. */
   summary: SessionSummary;
+
+  /** Network events observed during this session (privacy-preserving). */
+  networkEvents?: NetworkEvent[];
 }
 
 /**
@@ -102,6 +106,21 @@ export interface UserSettings {
 
   /** Whether to automatically block unidentified agents. Default: false. */
   autoBlockUnknownAgents: boolean;
+
+  /** Whether to look up agents in the AIM registry. Default: false. */
+  aimLookupEnabled: boolean;
+
+  /** Base URL for the AIM API. Default: https://aim.opena2a.org */
+  aimBaseUrl: string;
+
+  /** Whether to check agents against the OpenA2A registry. Default: false. */
+  registryLookupEnabled: boolean;
+
+  /** Base URL for the OpenA2A registry API. Default: https://registry.opena2a.org */
+  registryBaseUrl: string;
+
+  /** Whether to auto-block agents with trust score below 0.3. Default: false. */
+  autoBlockUntrustedAgents: boolean;
 }
 
 /**
@@ -140,4 +159,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   maxSessions: 5,
   maxDetectionLogEntries: 100,
   autoBlockUnknownAgents: false,
+  aimLookupEnabled: false,
+  aimBaseUrl: 'https://aim.opena2a.org',
+  registryLookupEnabled: false,
+  registryBaseUrl: 'https://registry.opena2a.org',
+  autoBlockUntrustedAgents: false,
 };

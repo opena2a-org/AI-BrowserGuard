@@ -13,11 +13,14 @@
  * our extension can update the stored delegation rules.
  */
 
+import { installNetworkInterceptor } from './network-interceptor';
+
 const MSG_INIT = 'AI_GUARD:INIT';
 const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
 const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
 const MSG_CDP_DETECTED = 'AI_GUARD:CDP_DETECTED';
+const MSG_NETWORK_EVENT = 'AI_GUARD:NETWORK_EVENT';
 
 interface InterceptorRule {
   isActive: boolean;
@@ -342,6 +345,21 @@ if (nav) {
     if (!allowed) {
       try { e.preventDefault(); } catch { /* some navigate events are not cancellable */ }
     }
+  });
+}
+
+// ── Network activity interception ──────────────────────────────────────────
+// Install fetch/XHR wrappers to observe network requests. Events are relayed
+// to the isolated world content script via postMessage, which forwards them
+// to the background service worker for the Network Activity panel.
+// Guard: only install when fetch and XMLHttpRequest are available (browser context).
+if (typeof window.fetch === 'function' && typeof XMLHttpRequest !== 'undefined') {
+  installNetworkInterceptor((event) => {
+    window.postMessage({
+      type: MSG_NETWORK_EVENT,
+      nonce: guardNonce,
+      event,
+    }, '*');
   });
 }
 

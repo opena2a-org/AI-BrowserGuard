@@ -19,6 +19,7 @@ const MSG_RULE_UPDATE = 'AI_GUARD:RULE_UPDATE';
 const MSG_ACTION = 'AI_GUARD:ACTION';
 const MSG_ALLOW_ONCE = 'AI_GUARD:ALLOW_ONCE';
 const MSG_CDP_DETECTED = 'AI_GUARD:CDP_DETECTED';
+const MSG_NETWORK_EVENT = 'AI_GUARD:NETWORK_EVENT';
 
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
@@ -95,6 +96,13 @@ function initialize(): void {
       };
 
       sendToBackground('DETECTION_RESULT', event).catch(() => { /* ignore */ });
+      return;
+    }
+
+    // Relay network events from the MAIN world interceptor to background
+    if (e.data.type === MSG_NETWORK_EVENT) {
+      if (!e.data.nonce || e.data.nonce !== GUARD_NONCE) return;
+      sendToBackground('NETWORK_EVENT', e.data.event).catch(() => { /* ignore */ });
       return;
     }
 
