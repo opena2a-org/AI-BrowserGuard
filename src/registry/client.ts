@@ -1,7 +1,7 @@
 /**
  * OpenA2A Registry trust check client.
  *
- * Queries the public registry at registry.opena2a.org to determine
+ * Queries the public registry at api.oa2a.org to determine
  * whether an agent type is registered and its trust classification.
  * Results are cached with a 5-minute TTL.
  *
@@ -32,7 +32,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const DEFAULT_REGISTRY_BASE_URL = 'https://registry.opena2a.org';
+const DEFAULT_REGISTRY_BASE_URL = 'https://api.oa2a.org';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const cache = new Map<string, CacheEntry>();
