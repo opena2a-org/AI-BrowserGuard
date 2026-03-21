@@ -138,14 +138,45 @@ export async function flushQueue(accessToken?: string | null): Promise<{ sent: n
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
+  // Generate a stable anonymous contributor token from the extension ID.
+  // This lets the registry deduplicate without identifying the user.
+  let contributorToken = 'anon-browserguard';
+  try {
+    contributorToken = 'bg-' + chrome.runtime.id;
+  } catch {
+    // Extension ID unavailable in some contexts
+  }
+
+  // Map internal events to the registry's expected schema
+  const toolVersion = chrome.runtime.getManifest?.()?.version ?? '0.0.0';
+  const registryEvents = queue.events.map((event) => ({
+    type: event.type === 'detection_summary' ? 'detection' : 'behavior',
+    tool: 'aibrowserguard',
+    toolVersion,
+    timestamp: event.timestamp,
+    detectionSummary: event.type === 'detection_summary' ? {
+      agentsFound: 1,
+      mcpServersFound: 0,
+      frameworkTypes: [(event.data as { framework: string }).framework],
+    } : undefined,
+    behaviorSummary: event.type === 'session_summary' ? {
+      interactions: (event.data as { totalActions: number }).totalActions,
+      successRate: (() => {
+        const d = event.data as { totalActions: number; allowedActions: number };
+        return d.totalActions > 0 ? d.allowedActions / d.totalActions : 1.0;
+      })(),
+      anomalies: (event.data as { violations: number }).violations,
+    } : undefined,
+  }));
+
   try {
     const response = await fetch(REGISTRY_CONTRIBUTE_URL, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        tool: 'aibrowserguard',
-        version: chrome.runtime.getManifest?.()?.version ?? '0.0.0',
-        events: queue.events,
+        contributorToken,
+        events: registryEvents,
+        submittedAt: new Date().toISOString(),
       }),
     });
 
