@@ -1,13 +1,21 @@
 /**
- * Bump version in both manifest.json and package.json simultaneously.
+ * Bump version across all files and update test count in README.
  *
- * Usage:
+ * Single command to keep everything in sync:
  *   npm run bump -- patch    # 0.2.0 -> 0.2.1
  *   npm run bump -- minor    # 0.2.0 -> 0.3.0
  *   npm run bump -- major    # 0.2.0 -> 1.0.0
  *   npm run bump -- 0.3.0    # explicit version
+ *
+ * What it updates:
+ *   - manifest.json (version)
+ *   - package.json (version)
+ *   - README.md (test count badge + dev section test count)
+ *   - popup HTML __VERSION__ placeholder is handled at build time by build.js
+ *   - popup.ts reads chrome.runtime.getManifest().version at runtime as safety net
  */
 
+import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -25,6 +33,7 @@ if (!arg) {
 // Read current version from manifest (single source of truth)
 const manifestPath = resolve(root, 'manifest.json');
 const packagePath = resolve(root, 'package.json');
+const readmePath = resolve(root, 'README.md');
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
 const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
@@ -53,13 +62,71 @@ switch (arg) {
     }
 }
 
-// Update both files
+// 1. Update manifest.json and package.json
 manifest.version = newVersion;
 pkg.version = newVersion;
-
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+console.log(`Version: ${current} -> ${newVersion}`);
 
-console.log(`${current} -> ${newVersion}`);
-console.log(`  Updated: manifest.json, package.json`);
-console.log(`  Popup footer: reads from manifest at runtime (automatic)`);
+// 2. Run tests and capture the count
+let testCount = null;
+try {
+  const testOutput = execSync('npx vitest run 2>&1', { cwd: root, encoding: 'utf-8' });
+  const match = testOutput.match(/Tests\s+(\d+)\s+passed/);
+  if (match) {
+    testCount = parseInt(match[1], 10);
+  }
+} catch (err) {
+  // Tests may have failed — extract count from stderr/stdout anyway
+  const output = err.stdout ?? err.stderr ?? '';
+  const match = output.match(/Tests\s+(\d+)\s+passed/);
+  if (match) {
+    testCount = parseInt(match[1], 10);
+  }
+  if (!testCount) {
+    console.error('Tests failed. Fix tests before bumping.');
+    // Revert version changes
+    manifest.version = current;
+    pkg.version = current;
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+    process.exit(1);
+  }
+}
+
+// 3. Update README.md — test badge and dev section
+if (testCount) {
+  let readme = readFileSync(readmePath, 'utf-8');
+
+  // Update badge: tests-NNN%20passing
+  readme = readme.replace(
+    /tests-\d+%20passing/g,
+    `tests-${testCount}%20passing`
+  );
+
+  // Update dev section: # NNN tests
+  readme = readme.replace(
+    /# \d+ tests/g,
+    `# ${testCount} tests`
+  );
+
+  writeFileSync(readmePath, readme);
+  console.log(`Tests: ${testCount} passing`);
+  console.log(`  Updated: README.md badge + dev section`);
+}
+
+// 4. Run build to verify and inject version into dist
+try {
+  execSync('npm run build', { cwd: root, stdio: 'inherit' });
+} catch {
+  console.error('Build failed after version bump. Fix build errors.');
+  process.exit(1);
+}
+
+console.log(`\nDone. Files updated:`);
+console.log(`  manifest.json      ${newVersion}`);
+console.log(`  package.json       ${newVersion}`);
+console.log(`  README.md          ${testCount} tests`);
+console.log(`  dist/popup HTML    v${newVersion} (injected at build)`);
+console.log(`  popup.ts runtime   reads from manifest (automatic)`);

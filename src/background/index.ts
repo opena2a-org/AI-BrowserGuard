@@ -23,6 +23,9 @@ import type { DebuggerDetectionResult } from '../detection/cdp-debugger';
 import { lookupAgentIdentity } from '../aim/client';
 import { lookupRegistryTrust } from '../registry/client';
 import { generateSessionReport, storeReport, getReports } from '../session/report';
+import { recordDetection, queueEvent, flushQueue, getConsent, getContributeStats } from '../contribute/client';
+import { anonymizeDetection, anonymizeSession } from '../contribute/anonymize';
+import { getAIMAuthState } from '../aim/auth';
 import type { SessionReport } from '../session/report';
 import type { NetworkEvent } from '../content/network-interceptor';
 
@@ -63,11 +66,22 @@ function initialize(): void {
   chrome.alarms.create('delegation-check', { periodInMinutes: 1 });
   // Service worker keepalive — MV3 workers terminate after ~5 min idle
   chrome.alarms.create('keepalive-ping', { periodInMinutes: 0.4 });
+  // Periodic flush of queued contribution events
+  chrome.alarms.create('contribute-flush', { periodInMinutes: 5 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'delegation-check') {
       checkDelegationExpiration().catch(() => { /* ignore */ });
     }
     // keepalive-ping requires no action — the alarm firing is sufficient to keep the SW alive
+    if (alarm.name === 'contribute-flush') {
+      (async () => {
+        const consent = await getConsent().catch(() => null);
+        if (consent?.enabled) {
+          const auth = await getAIMAuthState().catch(() => null);
+          await flushQueue(auth?.accessToken).catch(() => { /* non-critical */ });
+        }
+      })().catch(() => { /* non-critical */ });
+    }
   });
 
   // Kill switch keyboard shortcut
@@ -85,7 +99,7 @@ function initialize(): void {
     });
   }, 3000);
 
-  console.log('[AI Browser Guard] Background service worker initialized');
+  console.debug('[AI Browser Guard] Background service worker initialized');
 }
 
 async function loadPersistedState(): Promise<void> {
@@ -270,6 +284,59 @@ function handleMessage(
       return true; // async response
     }
 
+    case 'CONTRIBUTE_STATS': {
+      getContributeStats().then((stats) => {
+        sendResponse(stats);
+      }).catch(() => {
+        sendResponse({ totalContributed: 0, queuedCount: 0, lastFlushedAt: null, enabled: false });
+      });
+      return true;
+    }
+
+    case 'CONTRIBUTE_ENABLE': {
+      (async () => {
+        const { enableContributions } = await import('../contribute/client');
+        await enableContributions();
+        sendResponse({ success: true });
+      })().catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
+    case 'CONTRIBUTE_DISABLE': {
+      (async () => {
+        const { disableContributions } = await import('../contribute/client');
+        await disableContributions();
+        sendResponse({ success: true });
+      })().catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
+    case 'CONTRIBUTE_FLUSH': {
+      (async () => {
+        const auth = await getAIMAuthState().catch(() => null);
+        const result = await flushQueue(auth?.accessToken);
+        sendResponse(result);
+      })().catch(() => {
+        sendResponse({ sent: 0, success: false });
+      });
+      return true;
+    }
+
+    case 'CONTRIBUTE_TIP_DISMISS': {
+      (async () => {
+        const { dismissTip } = await import('../contribute/client');
+        await dismissTip();
+        sendResponse({ success: true });
+      })().catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
     default:
       return false;
   }
@@ -336,6 +403,15 @@ async function handleDetection(tabId: number, event: DetectionEvent): Promise<vo
     agentTypesDetected: updatedTypes,
   };
   updateLifetimeStats(() => state.lifetimeStats).catch(() => { /* non-critical */ });
+
+  // Record detection for consent tip tracking + contribute if enabled
+  recordDetection().catch(() => { /* non-critical */ });
+  const consent = await getConsent().catch(() => null);
+  if (consent?.enabled) {
+    const hadDelegation = state.delegationRules.some((r) => r.isActive);
+    const contribution = anonymizeDetection(event, hadDelegation);
+    queueEvent(contribution).catch(() => { /* non-critical */ });
+  }
 
   updateBadge();
 }
@@ -592,6 +668,13 @@ async function generateAndStoreReport(sessionId: string): Promise<void> {
     if (session && session.endedAt) {
       const report = generateSessionReport(session);
       await storeReport(report);
+
+      // Contribute anonymized session summary if enabled
+      const consent = await getConsent().catch(() => null);
+      if (consent?.enabled && session) {
+        const sessionContribution = anonymizeSession(session);
+        queueEvent(sessionContribution).catch(() => { /* non-critical */ });
+      }
     }
   } catch {
     // Report generation is non-critical

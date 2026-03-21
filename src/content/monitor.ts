@@ -204,39 +204,6 @@ export function startBoundaryMonitor(
     }
   });
 
-  // MutationObserver for DOM modifications
-  const observer = new MutationObserver((mutations) => {
-    if (!monitorState.isMonitoring) return;
-
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
-        const url = window.location.href;
-        const result = checkBoundary('modify-dom', url, monitorState.activeRule);
-
-        if (!result.allowed) {
-          const target = mutation.target as Element;
-          const violation: BoundaryViolation = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            agentId: '',
-            attemptedAction: 'modify-dom',
-            url,
-            targetSelector: target?.nodeType === 1 ? getSelector(target) : 'document',
-            blockingRuleId: monitorState.activeRule?.id ?? 'none',
-            reason: result.reason,
-            userOverride: false,
-          };
-          onViolation(violation);
-        }
-      }
-    }
-  });
-
-  if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-  cleanups.push(() => observer.disconnect());
-
   return () => {
     monitorState.isMonitoring = false;
     for (const cleanup of cleanups) {

@@ -1,7 +1,7 @@
 > **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)# AI Browser Guard
 
 [![Build](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/AI-BrowserGuard/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-259%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
+[![Tests](https://img.shields.io/badge/tests-326%20passing-brightgreen)](https://github.com/opena2a-org/AI-BrowserGuard)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/)
 
@@ -69,7 +69,7 @@ Zero external network requests. All detection, delegation, and session tracking 
 npm install          # Install dependencies
 npm run build        # Build to dist/
 npm run dev          # Watch mode
-npm run test         # 259 tests
+npm run test         # 326 tests
 npm run lint         # TypeScript strict checking
 ```
 

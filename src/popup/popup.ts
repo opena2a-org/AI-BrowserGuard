@@ -7,12 +7,15 @@
 import type { MessagePayload, MessageType } from '../types/events';
 import type { AgentIdentity } from '../types/agent';
 import type { DelegationRule } from '../types/delegation';
-import type { AgentSession, LifetimeStats } from '../session/types';
+import type { AgentSession, LifetimeStats, UserSettings } from '../session/types';
+import { DEFAULT_SETTINGS } from '../session/types';
 import type { BoundaryAlert } from '../alerts/boundary';
 import type { SessionReport } from '../session/report';
 import { createInitialWizardState, renderWizard } from '../delegation/wizard';
 import type { WizardState } from '../delegation/wizard';
 import { createRuleFromPreset } from '../delegation/rules';
+import type { AIMAuthState } from '../aim/auth';
+import { getAIMAuthState, loginToAIM, logoutFromAIM, isTokenExpired } from '../aim/auth';
 
 interface PopupState {
   detectedAgents: AgentIdentity[];
@@ -27,6 +30,11 @@ interface PopupState {
   selectedReport: SessionReport | null;
   selectedSessionForNetwork: AgentSession | null;
   networkFilter: 'all' | 'agent' | 'user';
+  aimAuth: AIMAuthState | null;
+  settings: UserSettings;
+  settingsPanelOpen: boolean;
+  contributeStats: { totalContributed: number; queuedCount: number; lastFlushedAt: string | null; enabled: boolean } | null;
+  showContributeTip: boolean;
 }
 
 let popupState: PopupState = {
@@ -42,6 +50,11 @@ let popupState: PopupState = {
   selectedReport: null,
   selectedSessionForNetwork: null,
   networkFilter: 'all',
+  aimAuth: null,
+  settings: { ...DEFAULT_SETTINGS },
+  settingsPanelOpen: false,
+  contributeStats: null,
+  showContributeTip: false,
 };
 
 // Holds the interval ID for the delegation countdown timer.
@@ -103,6 +116,43 @@ async function queryBackgroundStatus(): Promise<void> {
     // Ignore
   }
 
+  // Load contribute stats
+  try {
+    const contributeResponse = await sendToBackground('CONTRIBUTE_STATS', {});
+    if (contributeResponse && typeof contributeResponse === 'object') {
+      popupState.contributeStats = contributeResponse as PopupState['contributeStats'];
+    }
+  } catch {
+    // Ignore
+  }
+
+  // Check if consent tip should be shown
+  try {
+    const { getConsent, shouldShowTip } = await import('../contribute/client');
+    const consent = await getConsent();
+    popupState.showContributeTip = shouldShowTip(consent);
+  } catch {
+    // Ignore
+  }
+
+  // Load AIM auth state directly from storage
+  try {
+    const authState = await getAIMAuthState();
+    popupState.aimAuth = authState;
+  } catch {
+    popupState.aimAuth = null;
+  }
+
+  // Load user settings from storage
+  try {
+    const result = await chrome.storage.local.get('settings');
+    if (result.settings && typeof result.settings === 'object') {
+      popupState.settings = { ...DEFAULT_SETTINGS, ...(result.settings as Partial<UserSettings>) };
+    }
+  } catch {
+    // Use defaults
+  }
+
   popupState.loading = false;
   renderAll();
 }
@@ -116,6 +166,11 @@ function setupEventListeners(): void {
   const wizardBtn = document.getElementById('delegation-wizard-btn');
   if (wizardBtn) {
     wizardBtn.addEventListener('click', onDelegationWizardClick);
+  }
+
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', onSettingsToggle);
   }
 
   // Listen for live updates from background (guard required — chrome is undefined outside extension)
@@ -204,6 +259,7 @@ function renderWizardUI(): void {
 }
 
 function renderAll(): void {
+  renderContributeTip();
   renderDetectionPanel();
   renderKillSwitchPanel();
   renderDelegationPanel();
@@ -212,7 +268,64 @@ function renderAll(): void {
   renderReportsPanel();
   renderNetworkPanel();
   renderMetricsPanel();
+  renderSettingsPanel();
   renderStatusBadge();
+}
+
+function renderContributeTip(): void {
+  // Remove existing tip if present
+  const existingTip = document.getElementById('contribute-tip');
+  if (existingTip) {
+    existingTip.remove();
+  }
+
+  if (!popupState.showContributeTip) return;
+
+  const detectionCount = popupState.lifetimeStats?.totalSessions ?? 0;
+
+  const tip = document.createElement('div');
+  tip.id = 'contribute-tip';
+  tip.className = 'contribute-tip';
+
+  const text = document.createElement('div');
+  text.className = 'contribute-tip-text';
+  text.textContent = `You've detected ${detectionCount} AI agent${detectionCount === 1 ? '' : 's'}. Share anonymized detection patterns to help other users identify AI activity.`;
+
+  const actions = document.createElement('div');
+  actions.className = 'contribute-tip-actions';
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'btn btn-secondary btn-sm';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.addEventListener('click', () => {
+    sendToBackground('CONTRIBUTE_TIP_DISMISS', {}).catch(() => { /* ignore */ });
+    popupState.showContributeTip = false;
+    tip.remove();
+  });
+
+  const enableBtn = document.createElement('button');
+  enableBtn.className = 'btn btn-primary btn-sm';
+  enableBtn.textContent = 'Enable';
+  enableBtn.addEventListener('click', () => {
+    sendToBackground('CONTRIBUTE_ENABLE', {}).then(() => {
+      popupState.showContributeTip = false;
+      if (popupState.contributeStats) {
+        popupState.contributeStats.enabled = true;
+      }
+      renderAll();
+    }).catch(() => { /* ignore */ });
+  });
+
+  actions.appendChild(dismissBtn);
+  actions.appendChild(enableBtn);
+  tip.appendChild(text);
+  tip.appendChild(actions);
+
+  // Insert above the metrics panel (or at the end of #app before footer)
+  const metricsPanel = document.getElementById('metrics-panel');
+  if (metricsPanel?.parentElement) {
+    metricsPanel.parentElement.insertBefore(tip, metricsPanel);
+  }
 }
 
 function renderDetectionPanel(): void {
@@ -947,6 +1060,11 @@ function renderMetricsPanel(): void {
     addMetricCell(grid, String(uniqueCount), 'framework types');
   }
 
+  // Contributions metric (if enabled and has contributed)
+  if (popupState.contributeStats?.enabled && popupState.contributeStats.totalContributed > 0) {
+    addMetricCell(grid, String(popupState.contributeStats.totalContributed), 'contributed');
+  }
+
   // "Active since" line
   since.textContent = '';
   if (stats.firstActiveAt) {
@@ -976,6 +1094,248 @@ function addMetricCell(container: HTMLElement, value: string, label: string): vo
   cell.appendChild(val);
   cell.appendChild(lbl);
   container.appendChild(cell);
+}
+
+function onSettingsToggle(): void {
+  popupState.settingsPanelOpen = !popupState.settingsPanelOpen;
+  const panel = document.getElementById('settings-panel');
+  if (panel) {
+    if (popupState.settingsPanelOpen) {
+      panel.classList.remove('hidden');
+    } else {
+      panel.classList.add('hidden');
+    }
+  }
+  renderSettingsPanel();
+}
+
+function renderSettingsPanel(): void {
+  const panel = document.getElementById('settings-panel');
+  const container = document.getElementById('settings-content');
+  if (!panel || !container) return;
+
+  if (!popupState.settingsPanelOpen) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  container.innerHTML = '';
+
+  // AIM Login section
+  const aimSection = document.createElement('div');
+  aimSection.className = 'settings-aim-section';
+
+  const aimLabel = document.createElement('div');
+  aimLabel.className = 'settings-label';
+  aimLabel.textContent = 'AIM Account';
+  aimSection.appendChild(aimLabel);
+
+  const authState = popupState.aimAuth;
+  const isLoggedIn = authState?.isLoggedIn && !isTokenExpired(authState);
+
+  if (isLoggedIn && authState) {
+    const row = document.createElement('div');
+    row.className = 'settings-aim-logged-in';
+
+    const email = document.createElement('span');
+    email.className = 'settings-aim-email';
+    email.textContent = authState.userEmail ?? 'Logged in';
+    email.title = authState.userEmail ?? '';
+
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn btn-secondary btn-sm';
+    logoutBtn.textContent = 'Log out';
+    logoutBtn.addEventListener('click', async () => {
+      try {
+        await logoutFromAIM();
+        popupState.aimAuth = {
+          isLoggedIn: false,
+          accessToken: null,
+          userEmail: null,
+          expiresAt: null,
+        };
+        renderSettingsPanel();
+      } catch {
+        // Ignore logout errors
+      }
+    });
+
+    row.appendChild(email);
+    row.appendChild(logoutBtn);
+    aimSection.appendChild(row);
+  } else {
+    const loginBtn = document.createElement('button');
+    loginBtn.className = 'btn btn-primary btn-sm';
+    loginBtn.textContent = 'Log in to AIM';
+    loginBtn.style.marginTop = '4px';
+    loginBtn.addEventListener('click', async () => {
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Connecting...';
+      try {
+        const newAuth = await loginToAIM(popupState.settings.aimBaseUrl);
+        popupState.aimAuth = newAuth;
+        renderSettingsPanel();
+      } catch {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Log in to AIM';
+      }
+    });
+    aimSection.appendChild(loginBtn);
+  }
+
+  container.appendChild(aimSection);
+
+  // Toggle settings
+  const toggles: Array<{
+    key: keyof UserSettings;
+    label: string;
+    description: string;
+  }> = [
+    {
+      key: 'aimLookupEnabled',
+      label: 'AIM Integration',
+      description: 'Look up agents in the AIM registry',
+    },
+    {
+      key: 'registryLookupEnabled',
+      label: 'Registry Integration',
+      description: 'Check agents against the OpenA2A registry',
+    },
+    {
+      key: 'notificationsEnabled',
+      label: 'Notifications',
+      description: 'Show Chrome notifications for violations',
+    },
+    {
+      key: 'autoBlockUntrustedAgents',
+      label: 'Auto-block untrusted agents',
+      description: 'Block agents with trust score below 0.3',
+    },
+  ];
+
+  for (const toggle of toggles) {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+
+    const labelWrap = document.createElement('div');
+
+    const label = document.createElement('div');
+    label.className = 'settings-label';
+    label.textContent = toggle.label;
+
+    const desc = document.createElement('div');
+    desc.className = 'settings-description';
+    desc.textContent = toggle.description;
+
+    labelWrap.appendChild(label);
+    labelWrap.appendChild(desc);
+
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'toggle-switch';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(popupState.settings[toggle.key]);
+    input.addEventListener('change', () => {
+      popupState.settings = {
+        ...popupState.settings,
+        [toggle.key]: input.checked,
+      };
+      sendToBackground('SETTINGS_UPDATE', {
+        [toggle.key]: input.checked,
+      }).catch(() => { /* ignore */ });
+    });
+
+    const slider = document.createElement('span');
+    slider.className = 'toggle-slider';
+
+    switchLabel.appendChild(input);
+    switchLabel.appendChild(slider);
+
+    row.appendChild(labelWrap);
+    row.appendChild(switchLabel);
+    container.appendChild(row);
+  }
+
+  // Community Trust Data section
+  const contributeSection = document.createElement('div');
+  contributeSection.style.cssText = 'padding-top: 6px; margin-top: 2px;';
+
+  const contributeSectionTitle = document.createElement('div');
+  contributeSectionTitle.className = 'settings-label';
+  contributeSectionTitle.style.cssText = 'margin-bottom: 4px; font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;';
+  contributeSectionTitle.textContent = 'Community Trust Data';
+  contributeSection.appendChild(contributeSectionTitle);
+
+  const contributeRow = document.createElement('div');
+  contributeRow.className = 'settings-row';
+
+  const contributeLabelWrap = document.createElement('div');
+
+  const contributeLabel = document.createElement('div');
+  contributeLabel.className = 'settings-label';
+  contributeLabel.textContent = 'Share anonymized data';
+
+  const contributeDesc = document.createElement('div');
+  contributeDesc.className = 'settings-description';
+  contributeDesc.textContent = 'Help build community trust scores for AI agents. Only anonymized framework types and action counts are shared. No URLs, page content, or personal data.';
+
+  contributeLabelWrap.appendChild(contributeLabel);
+  contributeLabelWrap.appendChild(contributeDesc);
+
+  const contributeSwitchLabel = document.createElement('label');
+  contributeSwitchLabel.className = 'toggle-switch';
+
+  const contributeInput = document.createElement('input');
+  contributeInput.type = 'checkbox';
+  contributeInput.checked = popupState.contributeStats?.enabled ?? false;
+  contributeInput.addEventListener('change', () => {
+    const msgType = contributeInput.checked ? 'CONTRIBUTE_ENABLE' : 'CONTRIBUTE_DISABLE';
+    sendToBackground(msgType, {}).then(() => {
+      if (popupState.contributeStats) {
+        popupState.contributeStats.enabled = contributeInput.checked;
+      }
+      renderSettingsPanel();
+    }).catch(() => { /* ignore */ });
+  });
+
+  const contributeSlider = document.createElement('span');
+  contributeSlider.className = 'toggle-slider';
+
+  contributeSwitchLabel.appendChild(contributeInput);
+  contributeSwitchLabel.appendChild(contributeSlider);
+
+  contributeRow.appendChild(contributeLabelWrap);
+  contributeRow.appendChild(contributeSwitchLabel);
+  contributeSection.appendChild(contributeRow);
+
+  // Show stats if contribute is enabled
+  if (popupState.contributeStats?.enabled) {
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'contribute-stat';
+
+    const parts: string[] = [];
+    if (popupState.contributeStats.totalContributed > 0) {
+      parts.push(`${popupState.contributeStats.totalContributed} events contributed`);
+    }
+    if (popupState.contributeStats.lastFlushedAt) {
+      const lastFlush = new Date(popupState.contributeStats.lastFlushedAt);
+      parts.push(`last sent ${lastFlush.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
+    }
+    if (popupState.contributeStats.queuedCount > 0) {
+      parts.push(`${popupState.contributeStats.queuedCount} queued`);
+    }
+
+    if (parts.length > 0) {
+      statsDiv.textContent = parts.join(' / ');
+    } else {
+      statsDiv.textContent = 'Enabled -- data will be contributed after detections';
+    }
+    contributeSection.appendChild(statsDiv);
+  }
+
+  container.appendChild(contributeSection);
 }
 
 function renderStatusBadge(): void {

@@ -97,6 +97,10 @@ const chromeMock = {
     setBadgeText: vi.fn(() => Promise.resolve()),
     setBadgeBackgroundColor: vi.fn(() => Promise.resolve()),
   },
+  identity: {
+    getRedirectURL: vi.fn((path?: string) => `https://test-id.chromiumapp.org/${path ?? ''}`),
+    launchWebAuthFlow: vi.fn(() => Promise.resolve(undefined)),
+  },
   alarms: {
     create: vi.fn(),
     onAlarm: createEventMock(),

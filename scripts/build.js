@@ -60,4 +60,11 @@ const fontsDir = resolve(root, 'dist', 'fonts');
 mkdirSync(fontsDir, { recursive: true });
 copyFileSync(resolve(root, 'fonts', 'inter-latin.woff2'), resolve(fontsDir, 'inter-latin.woff2'));
 
+// Inject version into popup HTML (replaces __VERSION__ placeholder)
+const popupHtmlPath = resolve(root, 'dist', 'popup', 'index.html');
+if (existsSync(popupHtmlPath)) {
+  const html = readFileSync(popupHtmlPath, 'utf-8');
+  writeFileSync(popupHtmlPath, html.replace(/__VERSION__/g, manifestData.version));
+}
+
 console.log('\nBuild complete. Load dist/ in chrome://extensions');

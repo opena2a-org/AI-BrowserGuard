@@ -20,6 +20,7 @@
       <div id="header-actions" class="header-actions">
         <button id="kill-switch-btn" class="btn btn-danger-compact" disabled>Kill Switch</button>
         <span class="header-shortcut"><kbd>Ctrl+Shift+K</kbd></span>
+        <button id="settings-btn" class="settings-btn" title="Settings">&#9881;</button>
       </div>
     </header>
 
@@ -60,9 +61,15 @@
       <div id="metrics-since" class="metrics-since"></div>
     </section>
 
+    <!-- Settings panel (hidden by default) -->
+    <section id="settings-panel" class="panel hidden">
+      <h2 class="panel-title-sm">Settings</h2>
+      <div id="settings-content"></div>
+    </section>
+
     <!-- Footer -->
     <footer id="footer">
-      <span class="footer-text">AI Browser Guard v0.2.1</span>
+      <span class="footer-text">AI Browser Guard v__VERSION__</span>
       <span class="footer-separator">|</span>
       <span class="footer-text">OpenA2A</span>
     </footer>

@@ -166,7 +166,12 @@ export type MessageType =
   | 'CDP_DEBUGGER_CHECK'
   | 'NETWORK_EVENT'
   | 'REPORTS_QUERY'
-  | 'REPORT_EXPORT';
+  | 'REPORT_EXPORT'
+  | 'CONTRIBUTE_STATS'
+  | 'CONTRIBUTE_ENABLE'
+  | 'CONTRIBUTE_DISABLE'
+  | 'CONTRIBUTE_FLUSH'
+  | 'CONTRIBUTE_TIP_DISMISS';
 
 /**
  * Typed message payload for inter-component communication.

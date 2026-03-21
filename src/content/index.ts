@@ -177,7 +177,7 @@ function initialize(): void {
     startMonitoring();
   }
 
-  console.log('[AI Browser Guard] Content script initialized');
+  console.debug('[AI Browser Guard] Content script initialized');
 }
 
 async function sendToBackground(type: MessageType, data: unknown): Promise<unknown> {
