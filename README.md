@@ -20,6 +20,8 @@ Chrome extension that detects, monitors, and controls AI agents operating in you
 - **Unmonitored sessions** -- Every agent action is logged to a session timeline with timestamps, target URLs, elements, and outcomes (allowed/blocked). The last 5 sessions are retained.
 - **No kill switch** -- One-click termination of all agent connections. Revokes permissions, clears automation flags, and terminates CDP sessions. Keyboard shortcut: Ctrl+Shift+K / Cmd+Shift+K.
 
+[See demos](https://opena2a.org/demos) (select More Tools tab)
+
 ## Detected Frameworks
 
 Every method below has been verified against the real framework.
