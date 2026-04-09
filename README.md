@@ -7,6 +7,8 @@
 
 Chrome extension that detects, monitors, and controls AI agents operating in your browser. Identifies Playwright, Puppeteer, Selenium, Anthropic Computer Use, and OpenAI Operator -- without requiring the agent to identify itself.
 
+**v0.4.0** -- User actions no longer blocked when an agent is detected. Inline toast notifications for blocked agent actions with one-click domain whitelisting. Improved trust display for known tools.
+
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf)
 
 [Install from Chrome Web Store](https://chromewebstore.google.com/detail/ojphpdmabflmcjhglfogmkdgchkncikf) | [Website](https://opena2a.org/aibrowserguard) | [Privacy Policy](https://opena2a.org/aibrowserguard/privacy)
@@ -63,7 +65,7 @@ Site allowlists and blocklists support glob patterns (e.g., `*.bank.com`).
 
 ## Privacy
 
-Zero external network requests. All detection, delegation, and session tracking runs locally in the browser. No analytics, no telemetry, no remote APIs. Full policy: [opena2a.org/aibrowserguard/privacy](https://opena2a.org/aibrowserguard/privacy).
+All detection, delegation, and session tracking runs locally in the browser. No analytics, no tracking. Optional opt-in: anonymized detection patterns can be shared with the OpenA2A trust registry to improve community threat intelligence. Disabled by default, prompted after 5 detections. Full policy: [opena2a.org/aibrowserguard/privacy](https://opena2a.org/aibrowserguard/privacy).
 
 ## Development
 
