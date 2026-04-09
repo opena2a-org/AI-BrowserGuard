@@ -113,6 +113,7 @@ function mapEventToCapability(eventType: string): AgentCapability | null {
 }
 
 function getSelector(el: Element): string {
+  if (!el || !el.tagName) return 'unknown';
   if (el.id) return `#${el.id}`;
   if (el.className && typeof el.className === 'string') {
     const classes = el.className.trim().split(/\s+/).slice(0, 2).join('.');

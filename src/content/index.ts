@@ -197,6 +197,12 @@ function initialize(): void {
 }
 
 async function sendToBackground(type: MessageType, data: unknown): Promise<unknown> {
+  // Guard against "Extension context invalidated" — happens when the extension
+  // reloads/updates but this content script is still alive in an old tab.
+  if (!chrome.runtime?.id) {
+    return undefined;
+  }
+
   const message: MessagePayload = {
     type,
     data,
@@ -212,8 +218,9 @@ async function sendToBackground(type: MessageType, data: unknown): Promise<unkno
           resolve(response);
         }
       });
-    } catch (err) {
-      reject(err);
+    } catch {
+      // Extension context invalidated — silently ignore
+      resolve(undefined);
     }
   });
 }
