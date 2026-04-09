@@ -25,6 +25,17 @@ const MSG_NETWORK_EVENT = 'AI_GUARD:NETWORK_EVENT';
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
 let currentAgentId: string | null = null;
+let contextInvalidated = false;
+
+/** Returns true when the extension context is still valid. */
+function isContextValid(): boolean {
+  try {
+    return !contextInvalidated && !!chrome.runtime?.id;
+  } catch {
+    contextInvalidated = true;
+    return false;
+  }
+}
 
 /** Show an inline toast for a blocked action and handle the whitelist callback. */
 function showBlockedActionToast(capability: string, url: string, reason: string): void {
@@ -162,11 +173,11 @@ function initialize(): void {
     monitorCleanup = startBoundaryMonitor(
       null,
       (violation) => {
-        sendToBackground('BOUNDARY_CHECK_REQUEST', violation);
+        sendToBackground('BOUNDARY_CHECK_REQUEST', violation).catch(() => { /* context gone */ });
         showBlockedActionToast(violation.attemptedAction, violation.url, violation.reason);
       },
       (event) => {
-        sendToBackground('AGENT_ACTION', event);
+        sendToBackground('AGENT_ACTION', event).catch(() => { /* context gone */ });
       }
     );
     registerCleanup(() => {
@@ -199,7 +210,7 @@ function initialize(): void {
 async function sendToBackground(type: MessageType, data: unknown): Promise<unknown> {
   // Guard against "Extension context invalidated" — happens when the extension
   // reloads/updates but this content script is still alive in an old tab.
-  if (!chrome.runtime?.id) {
+  if (!isContextValid()) {
     return undefined;
   }
 
@@ -209,17 +220,21 @@ async function sendToBackground(type: MessageType, data: unknown): Promise<unkno
     sentAt: new Date().toISOString(),
   };
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          // Context invalidated between the check and the callback — resolve
+          // instead of rejecting so callers never see unhandled rejections.
+          contextInvalidated = true;
+          resolve(undefined);
         } else {
           resolve(response);
         }
       });
     } catch {
       // Extension context invalidated — silently ignore
+      contextInvalidated = true;
       resolve(undefined);
     }
   });
@@ -230,7 +245,7 @@ function handleMessage(
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void
 ): boolean {
-  if (!message || !message.type) return false;
+  if (!isContextValid() || !message || !message.type) return false;
 
   switch (message.type) {
     case 'DELEGATION_UPDATE': {
@@ -243,10 +258,10 @@ function handleMessage(
       monitorCleanup = startBoundaryMonitor(
         rule,
         (violation) => {
-          sendToBackground('BOUNDARY_CHECK_REQUEST', violation);
+          sendToBackground('BOUNDARY_CHECK_REQUEST', violation).catch(() => { /* context gone */ });
           showBlockedActionToast(violation.attemptedAction, violation.url, violation.reason);
         },
-        (event) => sendToBackground('AGENT_ACTION', event)
+        (event) => sendToBackground('AGENT_ACTION', event).catch(() => { /* context gone */ })
       );
       sendResponse({ success: true });
       return false;
