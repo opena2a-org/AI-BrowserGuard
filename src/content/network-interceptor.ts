@@ -151,8 +151,11 @@ export function installNetworkInterceptor(
   });
 
   // --- Intercept XMLHttpRequest ---
+  // We only wrap `open` to capture method/URL metadata and attach a passive
+  // `loadstart` event listener. We do NOT wrap `send` — wrapping send puts
+  // our code in the call chain, so any CSP violations on the page's own
+  // requests get attributed to our extension in chrome://extensions.
   const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
 
   // Track method and URL per XHR instance using a WeakMap
   const xhrMeta = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
@@ -162,40 +165,35 @@ export function installNetworkInterceptor(
     url: string | URL,
     ...rest: unknown[]
   ): void {
-    xhrMeta.set(this, {
+    const meta = {
       method: method.toUpperCase(),
       url: typeof url === 'string' ? url : url.toString(),
-    });
-    return (originalXHROpen as Function).apply(this, [method, url, ...rest]);
-  };
-
-  XMLHttpRequest.prototype.send = function (
-    body?: Document | XMLHttpRequestBodyInit | null
-  ): void {
-    const meta = xhrMeta.get(this);
-    const initiator = detectAgentInitiation();
-    const dataSize = estimateBodySize(body ?? null);
-
-    const event: NetworkEvent = {
-      url: meta?.url ?? '',
-      method: meta?.method ?? 'GET',
-      timestamp: new Date().toISOString(),
-      dataSize,
-      initiator,
     };
+    xhrMeta.set(this, meta);
 
-    try {
-      callback(event);
-    } catch {
-      // Never let callback errors affect the actual request
-    }
+    // Observe the request passively via loadstart — fires when send() is
+    // called but without us being in the send() call chain.
+    this.addEventListener('loadstart', () => {
+      const initiator = detectAgentInitiation();
+      const event: NetworkEvent = {
+        url: meta.url,
+        method: meta.method,
+        timestamp: new Date().toISOString(),
+        dataSize: 0, // body size not available from loadstart
+        initiator,
+      };
+      try {
+        callback(event);
+      } catch {
+        // Never let callback errors affect the actual request
+      }
+    }, { once: true });
 
-    return originalXHRSend.call(this, body);
+    return (originalXHROpen as Function).apply(this, [method, url, ...rest]);
   };
 
   cleanups.push(() => {
     XMLHttpRequest.prototype.open = originalXHROpen;
-    XMLHttpRequest.prototype.send = originalXHRSend;
   });
 
   return () => {

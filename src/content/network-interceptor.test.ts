@@ -6,16 +6,26 @@ import type { NetworkEvent } from './network-interceptor';
 let originalFetch: typeof globalThis.fetch;
 let originalXHRProto: {
   open: typeof XMLHttpRequest.prototype.open;
-  send: typeof XMLHttpRequest.prototype.send;
 };
 
 // Create a minimal XHR mock for Node environment
 function createMockXHR(): typeof XMLHttpRequest {
   function MockXHR(this: Record<string, unknown>) {
-    // instance
+    this._listeners = new Map<string, Array<{ fn: Function; once: boolean }>>();
   }
   MockXHR.prototype.open = vi.fn();
-  MockXHR.prototype.send = vi.fn();
+  MockXHR.prototype.send = vi.fn(function (this: Record<string, unknown>) {
+    // Fire loadstart listeners synchronously for test convenience
+    const listeners = (this._listeners as Map<string, Array<{ fn: Function; once: boolean }>>)?.get('loadstart') ?? [];
+    for (const { fn } of listeners) {
+      fn();
+    }
+  });
+  MockXHR.prototype.addEventListener = vi.fn(function (this: Record<string, unknown>, type: string, fn: Function, opts?: { once?: boolean }) {
+    const map = this._listeners as Map<string, Array<{ fn: Function; once: boolean }>>;
+    if (!map.has(type)) map.set(type, []);
+    map.get(type)!.push({ fn, once: opts?.once ?? false });
+  });
   return MockXHR as unknown as typeof XMLHttpRequest;
 }
 
@@ -32,7 +42,6 @@ beforeEach(() => {
   }
   originalXHRProto = {
     open: XMLHttpRequest.prototype.open,
-    send: XMLHttpRequest.prototype.send,
   };
 });
 
@@ -96,15 +105,13 @@ describe('installNetworkInterceptor', () => {
     const callback = vi.fn();
     const cleanup = installNetworkInterceptor(callback);
 
-    // XHR should be wrapped
+    // XHR open should be wrapped (send is no longer wrapped — observed passively)
     expect(XMLHttpRequest.prototype.open).not.toBe(originalXHRProto.open);
-    expect(XMLHttpRequest.prototype.send).not.toBe(originalXHRProto.send);
 
     cleanup();
 
     // XHR should be restored
     expect(XMLHttpRequest.prototype.open).toBe(originalXHRProto.open);
-    expect(XMLHttpRequest.prototype.send).toBe(originalXHRProto.send);
   });
 
   it('handles fetch with no body (GET request)', async () => {
@@ -157,7 +164,7 @@ describe('installNetworkInterceptor', () => {
     }
   });
 
-  it('tracks POST body size for XHR', () => {
+  it('tracks POST method for XHR via passive observation', () => {
     const events: NetworkEvent[] = [];
     const cleanup = installNetworkInterceptor((event) => {
       events.push(event);
@@ -170,7 +177,8 @@ describe('installNetworkInterceptor', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].method).toBe('POST');
-      expect(events[0].dataSize).toBe('body content here'.length);
+      // Body size is not available from passive loadstart observation
+      expect(events[0].dataSize).toBe(0);
     } finally {
       cleanup();
     }
