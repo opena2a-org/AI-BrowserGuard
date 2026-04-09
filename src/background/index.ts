@@ -337,6 +337,16 @@ function handleMessage(
       return true;
     }
 
+    case 'DOMAIN_WHITELIST': {
+      const { domain } = message.data as { domain: string };
+      handleDomainWhitelist(domain).then(() => {
+        sendResponse({ success: true });
+      }).catch(() => {
+        sendResponse({ success: false });
+      });
+      return true;
+    }
+
     default:
       return false;
   }
@@ -532,6 +542,42 @@ async function handleDelegationUpdate(rule: DelegationRule): Promise<void> {
   }
 
   updateBadge();
+}
+
+/**
+ * Add a *.domain allow pattern to the active delegation rule.
+ * Called when the user clicks "Allow on [domain]" in a blocked-action toast.
+ */
+async function handleDomainWhitelist(domain: string): Promise<void> {
+  const activeRule = state.delegationRules.find((r) => r.isActive);
+  if (!activeRule) return;
+
+  const pattern = `*.${domain}`;
+
+  // Avoid duplicates
+  const exists = activeRule.scope.sitePatterns.some(
+    (p) => p.pattern === pattern || p.pattern === domain
+  );
+  if (!exists) {
+    activeRule.scope.sitePatterns.push({ pattern, action: 'allow' });
+  }
+
+  await saveDelegationRules(state.delegationRules);
+
+  // Broadcast updated rule to all content scripts
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'DELEGATION_UPDATE',
+        data: activeRule,
+        sentAt: new Date().toISOString(),
+      });
+    } catch {
+      // Tab may not have content script
+    }
+  }
 }
 
 async function executeKillSwitch(

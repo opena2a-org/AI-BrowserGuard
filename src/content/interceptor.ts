@@ -177,22 +177,27 @@ function reportCdpDetection(framework: string, detail: string, signals: Record<s
  * Check the call stack of the CURRENT execution for CDP automation patterns.
  * Call this from within intercepted API functions (window.open, form.submit, etc.)
  * to detect if the call originated from CDP-evaluated code.
+ *
+ * Returns true if a CDP framework pattern was found in the stack, meaning the
+ * current call was initiated by an automation agent rather than by the user.
  */
-function probeCallStack(): void {
-  if (cdpDetectionReported) return;
+function probeCallStack(): boolean {
   try {
     const stack = new Error('__abg_probe__').stack ?? '';
     for (const { pattern, framework } of CDP_STACK_PATTERNS) {
       if (pattern.test(stack)) {
-        reportCdpDetection(framework, `Detected ${framework} via intercepted API call stack.`, {
-          stackSnippet: stack.substring(0, 500),
-        });
-        return;
+        if (!cdpDetectionReported) {
+          reportCdpDetection(framework, `Detected ${framework} via intercepted API call stack.`, {
+            stackSnippet: stack.substring(0, 500),
+          });
+        }
+        return true;
       }
     }
   } catch {
     // Do not let probe errors affect page functionality
   }
+  return false;
 }
 
 // Install Error.prepareStackTrace trap (V8-specific).
@@ -267,7 +272,8 @@ window.open = function (
   target?: string,
   features?: string
 ): Window | null {
-  probeCallStack();
+  const fromAgent = probeCallStack();
+  if (!fromAgent) return _originalOpen(url, target, features); // user-initiated — pass through
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('open-tab', urlStr)) return _originalOpen(url, target, features);
   const { allowed, reason } = isActionAllowed('open-tab', urlStr);
@@ -279,7 +285,8 @@ window.open = function (
 // ── HTMLFormElement.prototype.submit (bypasses the 'submit' DOM event) ──────
 const _originalFormSubmit = HTMLFormElement.prototype.submit;
 HTMLFormElement.prototype.submit = function (this: HTMLFormElement): void {
-  probeCallStack();
+  const fromAgent = probeCallStack();
+  if (!fromAgent) { _originalFormSubmit.call(this); return; } // user-initiated — pass through
   const url = this.action || window.location.href;
   if (consumeAllowedOnce('submit-form', url)) { _originalFormSubmit.call(this); return; }
   const { allowed, reason } = isActionAllowed('submit-form', url);
@@ -295,7 +302,8 @@ history.pushState = function (
   unused: string,
   url?: string | URL | null
 ): void {
-  probeCallStack();
+  const fromAgent = probeCallStack();
+  if (!fromAgent) { _originalPushState(state, unused, url); return; } // user-initiated — pass through
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('navigate', urlStr)) { _originalPushState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);
@@ -311,7 +319,8 @@ history.replaceState = function (
   unused: string,
   url?: string | URL | null
 ): void {
-  probeCallStack();
+  const fromAgent = probeCallStack();
+  if (!fromAgent) { _originalReplaceState(state, unused, url); return; } // user-initiated — pass through
   const urlStr = url?.toString() ?? window.location.href;
   if (consumeAllowedOnce('navigate', urlStr)) { _originalReplaceState(state, unused, url); return; }
   const { allowed, reason } = isActionAllowed('navigate', urlStr);

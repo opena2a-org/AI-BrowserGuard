@@ -12,6 +12,7 @@ import type { DetectionVerdictResult } from './detector';
 import { startBoundaryMonitor, updateActiveRule, getMonitorState } from './monitor';
 import { executeContentKillSwitch, registerCleanup } from '../killswitch/index';
 import type { DelegationRule } from '../types/delegation';
+import { showBlockedToast } from './toast';
 
 const GUARD_NONCE = crypto.randomUUID();
 const MSG_INIT = 'AI_GUARD:INIT';
@@ -24,6 +25,19 @@ const MSG_NETWORK_EVENT = 'AI_GUARD:NETWORK_EVENT';
 let detectionCleanup: (() => void) | null = null;
 let monitorCleanup: (() => void) | null = null;
 let currentAgentId: string | null = null;
+
+/** Show an inline toast for a blocked action and handle the whitelist callback. */
+function showBlockedActionToast(capability: string, url: string, reason: string): void {
+  showBlockedToast({
+    capability,
+    url,
+    reason,
+    onWhitelist: (domain: string) => {
+      // Send whitelist request to background to add *.domain.com allow pattern
+      sendToBackground('DOMAIN_WHITELIST', { domain }).catch(() => { /* ignore */ });
+    },
+  });
+}
 
 /** Send the current delegation rule to the MAIN world interceptor. */
 function syncRuleToMainWorld(rule: DelegationRule | null): void {
@@ -130,6 +144,7 @@ function initialize(): void {
         userOverride: false,
       };
       sendToBackground('BOUNDARY_CHECK_REQUEST', violation).catch(() => { /* ignore */ });
+      showBlockedActionToast(capability, url, reason);
     }
   });
 
@@ -148,6 +163,7 @@ function initialize(): void {
       null,
       (violation) => {
         sendToBackground('BOUNDARY_CHECK_REQUEST', violation);
+        showBlockedActionToast(violation.attemptedAction, violation.url, violation.reason);
       },
       (event) => {
         sendToBackground('AGENT_ACTION', event);
@@ -219,7 +235,10 @@ function handleMessage(
       if (monitorCleanup) monitorCleanup();
       monitorCleanup = startBoundaryMonitor(
         rule,
-        (violation) => sendToBackground('BOUNDARY_CHECK_REQUEST', violation),
+        (violation) => {
+          sendToBackground('BOUNDARY_CHECK_REQUEST', violation);
+          showBlockedActionToast(violation.attemptedAction, violation.url, violation.reason);
+        },
         (event) => sendToBackground('AGENT_ACTION', event)
       );
       sendResponse({ success: true });

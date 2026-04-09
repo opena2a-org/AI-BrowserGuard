@@ -361,8 +361,19 @@ function renderDetectionPanel(): void {
     headerRow.appendChild(badge);
 
     // Trust score badge (from AIM/Registry)
+    // If user has an active delegation rule, show "Managed" instead of raw score.
+    // Common frameworks (Playwright, Puppeteer, Selenium) get a "Known tool" indicator.
+    const KNOWN_TOOLS = new Set(['playwright', 'puppeteer', 'selenium']);
+    const isKnownTool = KNOWN_TOOLS.has(agent.type);
+    const hasActiveDelegation = popupState.activeDelegation?.isActive === true;
+
     const trustBadge = document.createElement('span');
-    if (agent.trustScore !== undefined && agent.trustScore !== null) {
+    if (hasActiveDelegation && (isKnownTool || (agent.trustScore !== undefined && agent.trustScore < 0.3))) {
+      // User has explicitly set delegation rules — agent is "managed" regardless of registry score
+      trustBadge.style.cssText = 'font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; color: white; background: #06b6d4; margin-left: 4px;';
+      trustBadge.textContent = 'Managed';
+      trustBadge.title = 'You have an active delegation rule for this agent';
+    } else if (agent.trustScore !== undefined && agent.trustScore !== null) {
       const score = agent.trustScore;
       let trustColor: string;
       let trustLabel: string;
@@ -372,6 +383,9 @@ function renderDetectionPanel(): void {
       } else if (score >= 0.3) {
         trustColor = '#f59e0b'; // yellow/amber
         trustLabel = 'Known';
+      } else if (isKnownTool) {
+        trustColor = '#f59e0b'; // amber for known tools not in registry
+        trustLabel = 'Known Tool';
       } else {
         trustColor = '#ef4444'; // red
         trustLabel = 'Untrusted';
@@ -379,6 +393,10 @@ function renderDetectionPanel(): void {
       trustBadge.style.cssText = `font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; color: white; background: ${trustColor}; margin-left: 4px;`;
       trustBadge.textContent = `${trustLabel} (${score.toFixed(1)})`;
       trustBadge.title = agent.label ?? `Trust: ${score}`;
+    } else if (isKnownTool) {
+      trustBadge.style.cssText = 'font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; color: white; background: #f59e0b; margin-left: 4px;';
+      trustBadge.textContent = 'Known Tool';
+      trustBadge.title = `${agent.type} is a recognized automation framework`;
     } else {
       trustBadge.style.cssText = 'font-size: 11px; font-weight: 500; color: var(--text-secondary); margin-left: 4px;';
       trustBadge.textContent = 'AIM: N/A';
@@ -591,6 +609,49 @@ function renderViolationsPanel(): void {
 
   panel.classList.remove('hidden');
   container.innerHTML = '';
+
+  // Quick-whitelist: show recently blocked domains with one-click allow
+  const blockedDomains = new Map<string, number>();
+  for (const alert of popupState.recentViolations) {
+    try {
+      const domain = new URL(alert.violation.url).hostname;
+      blockedDomains.set(domain, (blockedDomains.get(domain) ?? 0) + 1);
+    } catch { /* skip invalid URLs */ }
+  }
+  if (blockedDomains.size > 0 && popupState.activeDelegation) {
+    const whitelistSection = document.createElement('div');
+    whitelistSection.style.cssText = 'margin-bottom: 12px; padding: 8px; background: rgba(6, 182, 212, 0.05); border: 1px solid rgba(6, 182, 212, 0.15); border-radius: 6px;';
+
+    const whitelistHeader = document.createElement('div');
+    whitelistHeader.style.cssText = 'font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;';
+    whitelistHeader.textContent = 'Recently Blocked Domains';
+    whitelistSection.appendChild(whitelistHeader);
+
+    for (const [domain, count] of blockedDomains) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0;';
+
+      const domainLabel = document.createElement('span');
+      domainLabel.style.cssText = 'font-size: 12px; color: var(--text-primary);';
+      domainLabel.textContent = `${domain} (${count})`;
+
+      const allowBtn = document.createElement('button');
+      allowBtn.className = 'btn btn-secondary';
+      allowBtn.style.cssText = 'padding: 2px 10px; font-size: 11px; color: #06b6d4; border-color: rgba(6, 182, 212, 0.3);';
+      allowBtn.textContent = 'Allow';
+      allowBtn.addEventListener('click', () => {
+        sendToBackground('DOMAIN_WHITELIST', { domain }).then(() => {
+          queryBackgroundStatus();
+        }).catch(() => { /* ignore */ });
+      });
+
+      row.appendChild(domainLabel);
+      row.appendChild(allowBtn);
+      whitelistSection.appendChild(row);
+    }
+    container.appendChild(whitelistSection);
+  }
+
   for (const alert of popupState.recentViolations.slice(-10).reverse()) {
     const item = document.createElement('div');
     item.className = 'event-item';
