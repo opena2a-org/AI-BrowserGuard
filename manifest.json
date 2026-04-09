@@ -7,8 +7,7 @@
     "storage",
     "alarms",
     "notifications",
-    "debugger",
-    "identity"
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"
