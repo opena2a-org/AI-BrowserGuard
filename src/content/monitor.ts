@@ -124,6 +124,21 @@ function getSelector(el: Element): string {
 /**
  * Start monitoring agent actions in the current page.
  */
+/**
+ * User gesture grace period (ms).
+ *
+ * Web apps like Gmail dispatch synthetic events internally in response to
+ * user clicks (e.g. for routing, focus management, delegated handlers).
+ * These synthetic events fire within milliseconds of the real user action
+ * and should NOT be treated as agent activity.
+ *
+ * When a trusted user event occurs, we suppress monitoring for this window
+ * so that page-internal synthetic events pass through. Agent-initiated
+ * synthetic events are independent of user gestures and will fire outside
+ * this grace window.
+ */
+const USER_GESTURE_GRACE_MS = 150;
+
 export function startBoundaryMonitor(
   rule: DelegationRule | null,
   onViolation: (violation: BoundaryViolation) => void,
@@ -139,10 +154,36 @@ export function startBoundaryMonitor(
 
   const cleanups: Array<() => void> = [];
 
+  // Track the timestamp of the last trusted user event so we can distinguish
+  // page-internal synthetic events (triggered by user) from agent-dispatched ones.
+  let lastTrustedEventAt = 0;
+
+  const trustedEventTracker = (e: Event) => {
+    if (e.isTrusted) {
+      lastTrustedEventAt = Date.now();
+    }
+  };
+
+  // Track trusted events on the same event types we monitor
+  const eventTypes = ['click', 'input', 'submit', 'keydown'];
+  for (const type of eventTypes) {
+    document.addEventListener(type, trustedEventTracker, { capture: true });
+  }
+  cleanups.push(() => {
+    for (const type of eventTypes) {
+      document.removeEventListener(type, trustedEventTracker, { capture: true });
+    }
+  });
+
   // Intercept user interaction events
   const interceptionHandler = (e: Event) => {
     if (!monitorState.isMonitoring) return;
     if (e.isTrusted) return; // Only intercept synthetic/untrusted events from agents
+
+    // Grace period: if a trusted user event happened recently, this synthetic
+    // event is likely page-internal (e.g. Gmail re-dispatching for routing)
+    // rather than agent-initiated. Pass it through.
+    if (Date.now() - lastTrustedEventAt < USER_GESTURE_GRACE_MS) return;
 
     const capability = mapEventToCapability(e.type);
     if (!capability) return;
@@ -194,7 +235,6 @@ export function startBoundaryMonitor(
     }
   };
 
-  const eventTypes = ['click', 'input', 'submit', 'keydown'];
   for (const type of eventTypes) {
     document.addEventListener(type, interceptionHandler, { capture: true });
   }
