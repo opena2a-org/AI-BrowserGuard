@@ -1183,70 +1183,6 @@ function renderSettingsPanel(): void {
   panel.classList.remove('hidden');
   container.innerHTML = '';
 
-  // AIM Login section
-  const aimSection = document.createElement('div');
-  aimSection.className = 'settings-aim-section';
-
-  const aimLabel = document.createElement('div');
-  aimLabel.className = 'settings-label';
-  aimLabel.textContent = 'AIM Account';
-  aimSection.appendChild(aimLabel);
-
-  const authState = popupState.aimAuth;
-  const isLoggedIn = authState?.isLoggedIn && !isTokenExpired(authState);
-
-  if (isLoggedIn && authState) {
-    const row = document.createElement('div');
-    row.className = 'settings-aim-logged-in';
-
-    const email = document.createElement('span');
-    email.className = 'settings-aim-email';
-    email.textContent = authState.userEmail ?? 'Logged in';
-    email.title = authState.userEmail ?? '';
-
-    const logoutBtn = document.createElement('button');
-    logoutBtn.className = 'btn btn-secondary btn-sm';
-    logoutBtn.textContent = 'Log out';
-    logoutBtn.addEventListener('click', async () => {
-      try {
-        await logoutFromAIM();
-        popupState.aimAuth = {
-          isLoggedIn: false,
-          accessToken: null,
-          userEmail: null,
-          expiresAt: null,
-        };
-        renderSettingsPanel();
-      } catch {
-        // Ignore logout errors
-      }
-    });
-
-    row.appendChild(email);
-    row.appendChild(logoutBtn);
-    aimSection.appendChild(row);
-  } else {
-    const loginBtn = document.createElement('button');
-    loginBtn.className = 'btn btn-primary btn-sm';
-    loginBtn.textContent = 'Log in to AIM';
-    loginBtn.style.marginTop = '4px';
-    loginBtn.addEventListener('click', async () => {
-      loginBtn.disabled = true;
-      loginBtn.textContent = 'Connecting...';
-      try {
-        const newAuth = await loginToAIM(popupState.settings.aimBaseUrl);
-        popupState.aimAuth = newAuth;
-        renderSettingsPanel();
-      } catch {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Log in to AIM';
-      }
-    });
-    aimSection.appendChild(loginBtn);
-  }
-
-  container.appendChild(aimSection);
-
   // Toggle settings
   const toggles: Array<{
     key: keyof UserSettings;
@@ -1254,24 +1190,9 @@ function renderSettingsPanel(): void {
     description: string;
   }> = [
     {
-      key: 'aimLookupEnabled',
-      label: 'AIM Integration',
-      description: 'Look up agents in the AIM registry',
-    },
-    {
-      key: 'registryLookupEnabled',
-      label: 'Registry Integration',
-      description: 'Check agents against the OpenA2A registry',
-    },
-    {
       key: 'notificationsEnabled',
       label: 'Notifications',
       description: 'Show Chrome notifications for violations',
-    },
-    {
-      key: 'autoBlockUntrustedAgents',
-      label: 'Auto-block untrusted agents',
-      description: 'Block agents with trust score below 0.3',
     },
   ];
 
